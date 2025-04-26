@@ -8,82 +8,100 @@
       --primary-color: #007bff;
       --error-color: #dc3545;
       --success-color: #28a745;
+      --bg-color: rgba(255, 255, 255, 0.1); /* Transparent background color */
+      --glass-bg: rgba(255, 255, 255, 0.2); /* Glass-like effect background */
+      --blur-strength: 8px; /* Strength of the blur effect */
     }
-
+  
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      margin: 20px;
+      margin: 0;
+      background: linear-gradient(135deg, rgba(0, 123, 255, 0.1), rgba(0, 123, 255, 0.2));
+      padding: 20px;
+      color: #fff;
     }
-
+  
     table {
       border-collapse: collapse;
       width: 100%;
       margin: 20px 0;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+      background-color: var(--glass-bg);
+      border-radius: 10px;
+      backdrop-filter: blur(var(--blur-strength)); /* Glass-like effect */
     }
-
+  
     th, td {
       border: 1px solid #ddd;
       padding: 12px;
       text-align: left;
     }
-
+  
     th {
-      background-color: #f8f9fa;
+      background-color: rgba(255, 255, 255, 0.2); /* Semi-transparent background */
       font-weight: 600;
+      backdrop-filter: blur(5px); /* Glass effect on header */
     }
-
+  
     tr:hover {
-      background-color: #f1f1f1;
+      background-color: rgba(255, 255, 255, 0.1);
     }
-
+  
     .clickable {
       cursor: pointer;
       color: var(--primary-color);
       text-decoration: underline;
+      transition: color 0.3s ease;
     }
-
+  
+    .clickable:hover {
+      color: #0056b3;
+    }
+  
     button {
       padding: 8px 16px;
       background-color: var(--primary-color);
       color: white;
       border: none;
-      border-radius: 4px;
+      border-radius: 8px;
       cursor: pointer;
-      transition: background-color 0.2s;
+      transition: background-color 0.3s, transform 0.2s ease;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
     }
-
+  
     button:hover {
       background-color: #0056b3;
+      transform: scale(1.05);
     }
-
+  
     .modal-overlay {
       position: fixed;
       top: 0;
       left: 0;
       right: 0;
       bottom: 0;
-      background: rgba(0,0,0,0.5);
+      background: rgba(0, 0, 0, 0.7);
       display: none;
       z-index: 999;
     }
-
+  
     .modal {
       position: fixed;
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
-      background: white;
+      background: var(--glass-bg);
       padding: 2rem;
-      border-radius: 8px;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+      border-radius: 16px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
       max-width: 90%;
       max-height: 90vh;
       overflow-y: auto;
       display: none;
       z-index: 1000;
+      backdrop-filter: blur(10px);
     }
-
+  
     .modal-close {
       position: absolute;
       top: 1rem;
@@ -91,34 +109,43 @@
       cursor: pointer;
       font-size: 1.5rem;
       line-height: 1;
+      color: #fff;
     }
-
+  
     .image-container {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
       gap: 1rem;
       margin-top: 1rem;
     }
-
+  
     .product-image {
       width: 100%;
       height: auto;
-      border: 1px solid #ddd;
-      border-radius: 4px;
+      border: 2px solid rgba(255, 255, 255, 0.3); /* Subtle border with transparency */
+      border-radius: 10px;
       padding: 4px;
-      background: white;
+      background: var(--bg-color);
+      transition: transform 0.3s ease;
     }
-
+  
+    .product-image:hover {
+      transform: scale(1.05);
+    }
+  
     .error-message {
       color: var(--error-color);
       padding: 1rem;
       text-align: center;
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 8px;
+      backdrop-filter: blur(5px);
     }
-
+  
     .loading {
       padding: 1rem;
       text-align: center;
-      color: #666;
+      color: #ccc;
     }
   </style>
 </head>
@@ -170,17 +197,19 @@
           <tr>
             <td>#${order.order_number}</td>
             <td>
+              ${address.name || ''}<br>
               ${address.address1 || ''}<br>
-              ${address.city || ''}, ${address.zip || ''}<br>
+              ${address.address2 || ''}<br>
+              ${address.zip || ''}, ${address.city || ''}<br>
               ${address.country_code || ''}
             </td>
             <td class="clickable" 
                 onclick="showProductImages('${mainItem.product_id}')">
-              ${order.line_items.length} items
+              ${order.total_item_count} items
             </td>
             <td>${shipping?.title || 'Standard Shipping'}</td>
             <td>
-              ${shipping?.title.includes('Pickup') ? `
+              ${shipping?.title === 'High Price' || shipping?.title === 'Low Price' ? `
                 <button onclick="handlePickup(${index})">
                   Find Pickup
                 </button>
@@ -226,39 +255,59 @@
       }
     }
 
-    async function handlePickup(index) {
-      const order = currentOrders[index];
-      const container = document.getElementById(`pickup-${index}`);
-      
-      try {
-        container.innerHTML = '<div class="loading">Searching pickup points...</div>';
-        
-        const response = await fetch('/api/find-pickup-point', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            streetAddress: order.shipping_address.address1,
-            postcode: order.shipping_address.zip,
-            locality: order.shipping_address.city,
-            countryCode: order.shipping_address.country_code
-          })
-        });
+  async function handlePickup(index) {
+  const order = currentOrders[index];
+  const container = document.getElementById(`pickup-${index}`);
 
-        const data = await response.json();
-        const point = data.servicePoints?.[0];
-        
-        container.innerHTML = point ? `
-          <div>
-            <strong>${point.pupCode}</strong><br>
-            ${point.addresses?.[0]?.streetAddress || ''}<br>
-            ${point.addresses?.[0]?.postcode || ''} 
-            ${point.addresses?.[0]?.city || ''}
-          </div>
-        ` : '<div class="error-message">No pickup points found</div>';
-      } catch (error) {
-        container.innerHTML = `<div class="error-message">Error: ${error.message}</div>`;
+  try {
+    container.innerHTML = '<div class="loading">Searching pickup points...</div>';
+
+    const response = await fetch('/api/find-pickup-point', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        streetAddress: order.shipping_address.address1,
+        postcode: order.shipping_address.zip,
+        locality: order.shipping_address.city,
+        countryCode: order.shipping_address.country_code
+      })
+    });
+
+    const data = await response.json();
+    const points = data.servicePoints || []; // NEW: get all pickup points from response
+
+    if (points.length) {
+      points.sort((a, b) => a.distanceInMeters - b.distanceInMeters); // NEW: sort points by distance
+      const closestPoint = points[0]; // NEW: select the closest point
+
+      // NEW: format the distance nicely
+      let distanceText = '';
+      if (closestPoint.distanceInMeters >= 1000) {
+        distanceText = `${(closestPoint.distanceInMeters / 1000).toFixed(1)} km`;
+      } else {
+        distanceText = `${closestPoint.distanceInMeters} m`;
       }
+
+      container.innerHTML = `
+        <div>
+          <strong>${closestPoint.pupCode}</strong><br>
+         
+          ${closestPoint.publicName || 'No public name available'}<br>
+          ${closestPoint.addresses?.[0]?.streetAddress || ''}<br>
+          ${closestPoint.addresses?.[0]?.postcode || ''} 
+          ${closestPoint.addresses?.[0]?.city || ''}<br>
+          ${closestPoint.countryCode || ''}<br>
+          ${closestPoint.parcelLocker ? 'Parcel Locker' : 'Post Office'}<br> <!-- NEW: show locker/post office -->
+          Distance from customer: ${distanceText} <!-- NEW: show distance -->
+        </div>in 
+      `;
+    } else {
+      container.innerHTML = '<div class="error-message">No pickup points found</div>';
     }
+  } catch (error) {
+    container.innerHTML = `<div class="error-message">Error: ${error.message}</div>`;
+  }
+}
 
     function showModal() {
       document.getElementById('modal-overlay').style.display = 'block';

@@ -37,7 +37,9 @@ const verifyWebhook = (req, res, next) => {
 app.post('/api/webhook/orders', verifyWebhook, (req, res) => {
   try {
     const webhookOrder = req.body;
-    
+    const totalItemCount = webhookOrder.line_items.reduce((sum, item) => sum + item.current_quantity, 0);
+
+
     const transformedOrder = {
       id: webhookOrder.id,
       order_number: webhookOrder.order_number,
@@ -45,9 +47,12 @@ app.post('/api/webhook/orders', verifyWebhook, (req, res) => {
         title: item.title,
         product_id: `gid://shopify/Product/${item.product_id}`,
         variant_id: item.variant_id,
-        requires_shipping: item.requires_shipping
+        requires_shipping: item.requires_shipping,
+        quantity: item.current_quantity
       })),
+      total_item_count: totalItemCount,
       shipping_address: {
+        name: webhookOrder.shipping_address?.name,
         address1: webhookOrder.shipping_address?.address1,
         address2: webhookOrder.shipping_address?.address2,
         city: webhookOrder.shipping_address?.city,
@@ -146,7 +151,7 @@ app.post('/api/find-pickup-point', async (req, res) => {
     postiUrl.searchParams.append("postcode", postcode);
     postiUrl.searchParams.append("locality", locality || '');
     postiUrl.searchParams.append("countryCode", countryCode || 'FI');
-    postiUrl.searchParams.append("limit", "1");
+    postiUrl.searchParams.append("limit", "10");
 
     const response = await fetch(postiUrl.toString(), {
       headers: {
