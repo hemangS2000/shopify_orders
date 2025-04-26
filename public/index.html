@@ -4,155 +4,155 @@
   <meta charset="UTF-8">
   <title>Shopify Orders</title>
   <style>
-    /* Existing styles remain the same */
-    .refresh-button {
+    /* Table Styles */
+    table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+    th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+    th { background-color: #f8f9fa; }
+    tr:hover { background-color: #f1f1f1; }
+    
+    /* Interactive Elements */
+    .clickable { cursor: pointer; color: #007bff; }
+    button { 
+      padding: 8px 16px; 
+      background-color: #007bff; 
+      color: white; 
+      border: none; 
+      border-radius: 4px; 
+      cursor: pointer;
+      transition: background-color 0.3s;
+    }
+    button:hover { background-color: #0056b3; }
+    button:disabled { background-color: #6c757d; cursor: not-allowed; }
+    
+    /* Modal Styles */
+    .modal { 
+      display: none;
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: white;
+      padding: 2rem;
+      border-radius: 8px;
+      box-shadow: 0 0 20px rgba(0,0,0,0.2);
+      z-index: 1000;
+      max-width: 90%;
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.5);
+      z-index: 999;
+    }
+    .modal-close {
+      position: absolute;
+      top: 1rem;
+      right: 1rem;
+      cursor: pointer;
+      font-size: 1.5rem;
+      font-weight: bold;
+    }
+    
+    /* Image Styles */
+    .product-image {
+      max-width: 100%;
+      height: auto;
+      max-height: 70vh;
+      border: 1px solid #ddd;
+      border-radius: 4px;
       margin: 10px 0;
-      padding: 8px 16px;
-      background-color: #28a745;
-      color: white;
     }
-    .timestamp {
-      color: #666;
-      font-size: 0.9em;
+    .image-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: center;
     }
+    
+    /* Status Messages */
+    .loading { color: #6c757d; font-style: italic; }
+    .error { color: #dc3545; font-weight: bold; padding: 1rem; }
+    .warning { color: #ffc107; padding: 1rem; }
   </style>
 </head>
 <body>
   <h1>Shopify Orders</h1>
-  <button class="refresh-button" onclick="initializeTable()">Refresh Orders</button>
+  <button onclick="refreshOrders()" class="refresh-btn">Refresh Orders</button>
   <table>
     <thead>
       <tr>
-        <th>Source</th>
         <th>Order #</th>
-        <th>Customer Info</th>
+        <th>Customer</th>
         <th>Items</th>
-        <th>Pickup Action</th>
+        <th>Shipping</th>
+        <th>Actions</th>
       </tr>
     </thead>
     <tbody id="orders-table-body"></tbody>
   </table>
 
-  <!-- Product Image Modal -->
+  <!-- Product Images Modal -->
   <div class="modal-overlay" id="modal-overlay"></div>
   <div class="modal" id="product-modal">
     <span class="modal-close" onclick="closeModal()">&times;</span>
-    <h2>Product Image</h2>
-    <div id="modal-content"></div>
+    <h2 id="modal-title">Product Images</h2>
+    <div id="modal-content" class="image-container"></div>
   </div>
 
   <script>
     // Order Handling
-    async function initializeTable() {
+    async function refreshOrders() {
       try {
         const response = await fetch('/api/orders');
         const orders = await response.json();
         renderOrders(orders);
       } catch (error) {
-        console.error('Failed to load orders:', error);
-        alert('Error loading orders');
+        showError('Failed to refresh orders: ' + error.message);
       }
     }
 
     function renderOrders(orders) {
       const tbody = document.getElementById('orders-table-body');
-      
       tbody.innerHTML = orders.map((order, index) => {
-        const requiresShipping = order.line_items.some(item => item.requires_shipping);
-        const shippingLine = order.shipping_lines?.[0];
-        const isPickupPoint = shippingLine?.title.includes('Pickup');
+        const mainProduct = order.line_items[0];
+        const shippingMethod = order.shipping_lines[0]?.title;
+        const isPickup = shippingMethod?.includes('Pickup');
 
         return `
-          <tr class="${requiresShipping ? '' : 'no-shipping'}">
-            <td>${order.source_name}</td>
-            <td>
-              #${order.order_number}<br>
-              <span class="timestamp">${new Date(order.created_at).toLocaleDateString()}</span>
-            </td>
+          <tr>
+            <td>#${order.order_number}</td>
             <td>
               ${order.shipping_address?.name || 'N/A'}<br>
-              ${order.customer.email}<br>
-              ${order.shipping_address?.phone || 'N/A'}
+              ${order.shipping_address?.phone || ''}
             </td>
-            <td class="clickable" onclick="handleItemClick('${order.line_items[0]?.product_id}')">
-              ${order.line_items.length}
+            <td class="clickable" onclick="showProductImages('${mainProduct.product_id}')">
+              ${order.line_items.length} items
             </td>
+            <td>${shippingMethod || 'Standard Shipping'}</td>
             <td>
-              ${isPickupPoint ? `
+              ${isPickup ? `
                 <button 
-                  class="pickup-btn"
+                  onclick="findPickupPoint('${index}')"
                   data-address='${JSON.stringify(order.shipping_address)}'
-                  data-target="pickup-${index}"
                 >
-                  Find Pickup Point
+                  Find Pickup
                 </button>
                 <div id="pickup-${index}"></div>
-              ` : `
-                <span class="home-delivery">
-                  ${shippingLine?.title || 'No shipping info'}
-                </span>
-              `}
+              ` : 'Home Delivery'}
             </td>
           </tr>
         `;
       }).join('');
     }
 
-    // Pickup Point Handling
-    document.addEventListener('click', async (event) => {
-      if (event.target.classList.contains('pickup-btn')) {
-        const button = event.target;
-        const address = JSON.parse(button.dataset.address);
-        const targetId = button.dataset.target;
-        const container = document.getElementById(targetId);
-        
-        button.disabled = true;
-        container.innerHTML = '<div class="loading">Searching...</div>';
-
-        try {
-          const response = await fetch('/api/find-pickup-point', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              streetAddress: address.address1,
-              postcode: address.zip,
-              locality: address.city,
-              countryCode: address.country_code
-            })
-          });
-
-          const data = await response.json();
-          updatePickupPoint(data, targetId);
-        } catch (error) {
-          container.innerHTML = `<div class="error">Error: ${error.message}</div>`;
-        } finally {
-          button.disabled = false;
-        }
-      }
-    });
-
-    function updatePickupPoint(data, targetId) {
-      const container = document.getElementById(targetId);
-      const pickupPoint = data.servicePoints?.[0];
-      
-      if (!pickupPoint) {
-        container.innerHTML = '<div class="error">No pickup points found</div>';
-        return;
-      }
-
-      const address = pickupPoint.addresses?.[0] || {};
-      container.innerHTML = `
-        <div class="pickup-info">
-          <strong>${pickupPoint.pupCode}</strong><br>
-          ${address.streetAddress || 'Address not available'}<br>
-          ${address.postcode || ''} ${address.city || ''}<br>
-          ${address.countryCode || ''}
-        </div>
-      `;
-    }
-
-    // Product Image Modal
-    async function handleItemClick(productId) {
+    // Product Images
+    async function showProductImages(productId) {
       try {
         const response = await fetch('/api/get-product', {
           method: 'POST',
@@ -160,18 +160,99 @@
           body: JSON.stringify({ productId })
         });
 
-        const productData = await response.json();
-        const imageUrl = productData.data?.product?.images?.edges?.[0]?.node?.originalSrc;
+        const data = await response.json();
+        const product = data.data?.product;
         
-        document.getElementById('modal-content').innerHTML = imageUrl 
-          ? `<img src="${imageUrl}" class="product-image" alt="Product image">`
-          : '<p>No image available</p>';
-          
-        document.getElementById('product-modal').style.display = 'block';
-        document.getElementById('modal-overlay').style.display = 'block';
+        let imagesHTML = '';
+        if (product?.featuredImage?.originalSrc) {
+          imagesHTML = createImageCard(product.featuredImage.originalSrc);
+        }
+        
+        if (product?.images?.edges?.length) {
+          imagesHTML += product.images.edges
+            .filter(img => img.node.originalSrc !== product.featuredImage?.originalSrc)
+            .map(img => createImageCard(img.node.originalSrc))
+            .join('');
+        }
+
+        document.getElementById('modal-content').innerHTML = imagesHTML || 
+          '<div class="warning">No images available</div>';
+        
+        document.getElementById('modal-title').textContent = product?.title || 'Product Images';
+        showModal();
       } catch (error) {
-        alert('Error loading product image: ' + error.message);
+        showError('Error loading product: ' + error.message);
       }
+    }
+
+    function createImageCard(src) {
+      return `
+        <div class="image-card">
+          <img 
+            src="${src}" 
+            class="product-image"
+            onerror="handleImageError(this)"
+            alt="Product image"
+          >
+        </div>
+      `;
+    }
+
+    function handleImageError(img) {
+      img.style.display = 'none';
+      const card = img.parentElement;
+      card.innerHTML = '<div class="error">Failed to load image</div>';
+    }
+
+    // Pickup Point Handling
+    async function findPickupPoint(index) {
+      const container = document.getElementById(`pickup-${index}`);
+      const button = event.target;
+      const address = JSON.parse(button.dataset.address);
+      
+      try {
+        button.disabled = true;
+        container.innerHTML = '<div class="loading">Searching...</div>';
+
+        const response = await fetch('/api/find-pickup-point', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            streetAddress: address.address1,
+            postcode: address.zip,
+            locality: address.city,
+            countryCode: address.country_code
+          })
+        });
+
+        const data = await response.json();
+        container.innerHTML = formatPickupInfo(data);
+      } catch (error) {
+        container.innerHTML = `<div class="error">${error.message}</div>`;
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    function formatPickupInfo(data) {
+      const point = data.servicePoints?.[0];
+      if (!point) return '<div class="warning">No pickup points found</div>';
+
+      const address = point.addresses?.[0] || {};
+      return `
+        <div class="pickup-info">
+          <strong>${point.pupCode}</strong><br>
+          ${address.streetAddress || ''}<br>
+          ${address.postcode || ''} ${address.city || ''}<br>
+          ${address.countryCode || ''}
+        </div>
+      `;
+    }
+
+    // Modal Control
+    function showModal() {
+      document.getElementById('product-modal').style.display = 'block';
+      document.getElementById('modal-overlay').style.display = 'block';
     }
 
     function closeModal() {
@@ -179,10 +260,17 @@
       document.getElementById('modal-overlay').style.display = 'none';
     }
 
+    // Error Handling
+    function showError(message) {
+      const modalContent = document.getElementById('modal-content');
+      modalContent.innerHTML = `<div class="error">${message}</div>`;
+      showModal();
+    }
+
     // Initialization
-    initializeTable();
-    setInterval(initializeTable, 30000); // Auto-refresh every 30 seconds
     document.getElementById('modal-overlay').addEventListener('click', closeModal);
+    refreshOrders();
+    setInterval(refreshOrders, 30000);
   </script>
 </body>
 </html>

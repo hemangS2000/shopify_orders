@@ -14,10 +14,10 @@ app.use(cors({
 app.use(express.json({ verify: (req, res, buf) => { req.rawBody = buf } }));
 app.use(express.static('public'));
 
-// In-memory order storage (replace with DB in production)
+// In-memory order storage
 let ordersStore = [];
 
-// Webhook Verification Middleware
+// Webhook Verification
 const verifyWebhook = (req, res, next) => {
   try {
     const hmac = req.get('X-Shopify-Hmac-Sha256');
@@ -26,60 +26,53 @@ const verifyWebhook = (req, res, next) => {
       .update(req.rawBody)
       .digest('base64');
 
-    if (generatedHash !== hmac) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
+    if (generatedHash !== hmac) return res.status(401).send('Unauthorized');
     next();
   } catch (error) {
     console.error('Webhook verification failed:', error);
-    res.status(401).json({ error: 'Unauthorized' });
+    res.status(401).send('Unauthorized');
   }
 };
 
-// Webhook Endpoint
+// Webhook Handler
 app.post('/api/webhook/orders', verifyWebhook, (req, res) => {
   try {
-    const webhookOrder = req.body;
-    
+    const order = req.body;
+    console.log('Received webhook for order:', order.id);
+
     const transformedOrder = {
-      id: webhookOrder.id,
-      order_number: webhookOrder.order_number,
-      source_name: webhookOrder.source_name,
-      customer: {
-        email: webhookOrder.email,
-        phone: webhookOrder.shipping_address?.phone
-      },
-      shipping_address: {
-        name: webhookOrder.shipping_address?.name,
-        address1: webhookOrder.shipping_address?.address1,
-        address2: webhookOrder.shipping_address?.address2,
-        zip: webhookOrder.shipping_address?.zip,
-        city: webhookOrder.shipping_address?.city,
-        country_code: webhookOrder.shipping_address?.country_code,
-        phone: webhookOrder.shipping_address?.phone
-      },
-      line_items: webhookOrder.line_items.map(item => ({
+      id: order.id,
+      order_number: order.order_number,
+      line_items: order.line_items.map(item => ({
         title: item.title,
         product_id: item.product_id,
+        variant_id: item.variant_id,
         requires_shipping: item.requires_shipping
       })),
-      shipping_lines: webhookOrder.shipping_lines.map(shipping => ({
+      shipping_address: {
+        name: order.shipping_address?.name,
+        address1: order.shipping_address?.address1,
+        city: order.shipping_address?.city,
+        zip: order.shipping_address?.zip,
+        country_code: order.shipping_address?.country_code,
+        phone: order.shipping_address?.phone
+      },
+      shipping_lines: order.shipping_lines.map(shipping => ({
         title: shipping.title,
-        price: shipping.price
+        code: shipping.code
       })),
-      created_at: new Date(webhookOrder.created_at).toISOString()
+      created_at: new Date(order.created_at).toISOString()
     };
 
-    // Store last 50 orders
     ordersStore = [transformedOrder, ...ordersStore.slice(0, 49)];
     res.sendStatus(200);
   } catch (error) {
     console.error('Webhook processing error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).send('Internal Server Error');
   }
 });
 
-// Get Orders Endpoint
+// Get Orders
 app.get('/api/orders', (req, res) => {
   try {
     res.json(ordersStore);
@@ -88,11 +81,12 @@ app.get('/api/orders', (req, res) => {
   }
 });
 
-// Product Image Endpoint
+// Product Details Endpoint
 app.post('/api/get-product', async (req, res) => {
   try {
     const { productId } = req.body;
-    
+    console.log('Fetching product:', productId);
+
     const response = await fetch(
       `https://${process.env.SHOPIFY_STORE}/admin/api/2024-01/graphql.json`,
       {
@@ -102,10 +96,13 @@ app.post('/api/get-product', async (req, res) => {
           'X-Shopify-Access-Token': process.env.ACCESS_TOKEN
         },
         body: JSON.stringify({
-          query: `query GetProductImage($id: ID!) {
+          query: `query GetProductWithImages($id: ID!) {
             product(id: $id) {
               title
-              images(first: 1) {
+              featuredImage {
+                originalSrc
+              }
+              images(first: 5) {
                 edges {
                   node {
                     originalSrc
@@ -120,8 +117,18 @@ app.post('/api/get-product', async (req, res) => {
     );
 
     const data = await response.json();
+    
+    if (data.errors) {
+      console.error('Shopify API Errors:', data.errors);
+      return res.status(404).json({ 
+        error: 'Product not found',
+        details: data.errors
+      });
+    }
+
     res.json(data);
   } catch (error) {
+    console.error('Product fetch error:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -138,7 +145,7 @@ app.post('/api/find-pickup-point', async (req, res) => {
     postiUrl.searchParams.append("countryCode", countryCode || 'FI');
     postiUrl.searchParams.append("limit", "1");
 
-    const postiRes = await fetch(postiUrl.toString(), {
+    const response = await fetch(postiUrl.toString(), {
       headers: {
         "Accept": "application/json",
         "Authorization": `Bearer ${process.env.POSTI_API_TOKEN}`,
@@ -146,7 +153,7 @@ app.post('/api/find-pickup-point', async (req, res) => {
       }
     });
 
-    const data = await postiRes.json();
+    const data = await response.json();
     res.json(data);
   } catch (error) {
     res.status(500).json({ error: error.message });
