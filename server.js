@@ -1,87 +1,48 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-
-// node-fetch v2.x compatible require
-const fetch = (...args) => 
-  import('node-fetch').then(({ default: fetch }) => fetch(...args));
+const fetch = require('node-fetch');
 
 const app = express();
-app.use(cors());
+
+// CORS Configuration
+app.use(cors({
+  origin: [
+    process.env.RENDER_EXTERNAL_URL,
+    'http://localhost:3000'
+  ],
+  optionsSuccessStatus: 200
+}));
+
 app.use(express.json());
 app.use(express.static('public'));
 
-const SHOPIFY_STORE = process.env.SHOPIFY_STORE;
-const ACCESS_TOKEN = process.env.ACCESS_TOKEN;
-
-
-// Add new endpoint for pickup point lookup
-app.post('/api/find-pickup-point', async (req, res) => {
-  try {
-    const { streetAddress, postcode, locality, countryCode } = req.body;
-    
-    const apiUrl = new URL("https://sbxgw.ecosystem.posti.fi/location/v3/find-by-address");
-    apiUrl.searchParams.append("streetAddress", streetAddress);
-    apiUrl.searchParams.append("postcode", postcode);
-    apiUrl.searchParams.append("locality", locality);
-    apiUrl.searchParams.append("countryCode", countryCode);
-    apiUrl.searchParams.append("limit", "1");
-
-    const postiResponse = await fetch(apiUrl.toString(), {
-      method: 'GET',
-      headers: {
-        "Accept": "application/json",
-        "Authorization": `Bearer ${process.env.POSTI_API_TOKEN}`,
-        "Accept-Language": "en"
-      }
-    });
-
-    const data = await postiResponse.json();
-    res.json(data);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Existing product endpoint remains the same
-
-
-
-
+// Shopify Product Endpoint
 app.post('/api/get-product', async (req, res) => {
   try {
     const { productId } = req.body;
-    
-    if (!productId) {
-      return res.status(400).json({ error: "Product ID required" });
+
+    // Validate product ID
+    if (!productId?.startsWith('gid://shopify/Product/')) {
+      return res.status(400).json({ error: "Invalid Product ID format" });
     }
 
-    const response = await fetch(
-      `https://${SHOPIFY_STORE}/admin/api/2025-04/graphql.json`,
+    const shopifyResponse = await fetch(
+      `https://${process.env.SHOPIFY_STORE}/admin/api/2024-01/graphql.json`,
       {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-Shopify-Access-Token': ACCESS_TOKEN
+          'X-Shopify-Access-Token': process.env.ACCESS_TOKEN
         },
         body: JSON.stringify({
-          query: `query listProductMetafields($id: ID!) {
+          query: `query GetProductImage($id: ID!) {
             product(id: $id) {
               title
               images(first: 1) {
                 edges {
                   node {
                     originalSrc
-                  }
-                }
-              }
-              metafields(first: 10) {
-                edges {
-                  node {
-                    id
-                    namespace
-                    key
-                    value
                   }
                 }
               }
@@ -92,9 +53,41 @@ app.post('/api/get-product', async (req, res) => {
       }
     );
 
-    const data = await response.json();
+    const data = await shopifyResponse.json();
     res.json(data);
+    
   } catch (error) {
+    console.error('Shopify API Error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Posti Location Endpoint
+app.post('/api/find-pickup-point', async (req, res) => {
+  try {
+    const { streetAddress, postcode, locality, countryCode } = req.body;
+
+    const postiUrl = new URL("https://sbxgw.ecosystem.posti.fi/location/v3/find-by-address");
+    postiUrl.searchParams.append("streetAddress", streetAddress);
+    postiUrl.searchParams.append("postcode", postcode);
+    postiUrl.searchParams.append("locality", locality);
+    postiUrl.searchParams.append("countryCode", countryCode || 'FI');
+    postiUrl.searchParams.append("limit", "1");
+
+    const postiResponse = await fetch(postiUrl.toString(), {
+      method: 'GET',
+      headers: {
+        "Accept": "application/json",
+        "Authorization": `Bearer ${process.env.POSTI_API_TOKEN}`,
+        "Accept-Language": "en"
+      }
+    });
+
+    const data = await postiResponse.json();
+    res.json(data);
+
+  } catch (error) {
+    console.error('Posti API Error:', error);
     res.status(500).json({ error: error.message });
   }
 });
