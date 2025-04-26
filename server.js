@@ -5,29 +5,24 @@ const fetch = require('node-fetch');
 
 const app = express();
 
-// CORS Configuration
+// Middleware
 app.use(cors({
-  origin: [
-    process.env.RENDER_EXTERNAL_URL,
-    'http://localhost:3000'
-  ],
+  origin: [process.env.RENDER_EXTERNAL_URL, 'http://localhost:3000'],
   optionsSuccessStatus: 200
 }));
-
 app.use(express.json());
 app.use(express.static('public'));
 
-// Shopify Product Endpoint
+// Shopify API
 app.post('/api/get-product', async (req, res) => {
   try {
     const { productId } = req.body;
-
-    // Validate product ID
+    
     if (!productId?.startsWith('gid://shopify/Product/')) {
-      return res.status(400).json({ error: "Invalid Product ID format" });
+      return res.status(400).json({ error: "Invalid Product ID" });
     }
 
-    const shopifyResponse = await fetch(
+    const shopifyRes = await fetch(
       `https://${process.env.SHOPIFY_STORE}/admin/api/2024-01/graphql.json`,
       {
         method: 'POST',
@@ -53,29 +48,34 @@ app.post('/api/get-product', async (req, res) => {
       }
     );
 
-    const data = await shopifyResponse.json();
+    const data = await shopifyRes.json();
     res.json(data);
-    
+
   } catch (error) {
-    console.error('Shopify API Error:', error);
+    console.error('Shopify Error:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
-// Posti Location Endpoint
+// Posti API
 app.post('/api/find-pickup-point', async (req, res) => {
   try {
     const { streetAddress, postcode, locality, countryCode } = req.body;
+    
+    if (!streetAddress || !postcode) {
+      return res.status(400).json({
+        error: "Street address and postcode are required"
+      });
+    }
 
     const postiUrl = new URL("https://sbxgw.ecosystem.posti.fi/location/v3/find-by-address");
     postiUrl.searchParams.append("streetAddress", streetAddress);
     postiUrl.searchParams.append("postcode", postcode);
-    postiUrl.searchParams.append("locality", locality);
+    postiUrl.searchParams.append("locality", locality || '');
     postiUrl.searchParams.append("countryCode", countryCode || 'FI');
     postiUrl.searchParams.append("limit", "1");
 
-    const postiResponse = await fetch(postiUrl.toString(), {
-      method: 'GET',
+    const postiRes = await fetch(postiUrl.toString(), {
       headers: {
         "Accept": "application/json",
         "Authorization": `Bearer ${process.env.POSTI_API_TOKEN}`,
@@ -83,12 +83,20 @@ app.post('/api/find-pickup-point', async (req, res) => {
       }
     });
 
-    const data = await postiResponse.json();
+    if (!postiRes.ok) {
+      const errorData = await postiRes.json();
+      throw new Error(errorData.message || 'Posti API Error');
+    }
+
+    const data = await postiRes.json();
     res.json(data);
 
   } catch (error) {
-    console.error('Posti API Error:', error);
-    res.status(500).json({ error: error.message });
+    console.error('Posti Error:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch pickup points',
+      details: error.message
+    });
   }
 });
 

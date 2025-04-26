@@ -4,9 +4,15 @@
   <meta charset="UTF-8">
   <title>Shopify Orders</title>
   <style>
+    /* Table Styles */
     table { border-collapse: collapse; width: 100%; }
     th, td { border: 1px solid #ddd; padding: 8px; }
     th { background-color: #f2f2f2; }
+    .no-shipping { background-color: #ffdddd; }
+    .home-delivery { color: #666; font-style: italic; }
+    
+    /* Interactive Elements */
+    .clickable { cursor: pointer; color: #007bff; }
     button { 
       padding: 6px 12px; 
       background-color: #007bff; 
@@ -16,10 +22,8 @@
       cursor: pointer;
     }
     button:hover { background-color: #0056b3; }
-    .no-shipping { background-color: #ffdddd; }
-    .home-delivery { color: #666; font-style: italic; }
-    .clickable { cursor: pointer; text-decoration: underline; color: #007bff; }
-    
+    button:disabled { background-color: #cccccc; }
+
     /* Modal Styles */
     .modal { 
       display: none;
@@ -56,6 +60,11 @@
       height: auto;
       margin-bottom: 10px;
     }
+
+    /* Status Messages */
+    .loading { color: #666; font-style: italic; }
+    .error { color: #dc3545; font-weight: bold; }
+    .pickup-info { background: #f8f9fa; padding: 8px; border-radius: 4px; }
   </style>
 </head>
 <body>
@@ -82,7 +91,7 @@
   </div>
 
   <script>
-    // Sample Orders Data - REPLACE WITH REAL PRODUCT IDs
+    // Sample Orders Data
     const orders = [
       {
         product_id: "gid://shopify/Product/8774958317825",
@@ -94,7 +103,7 @@
           address1: "Mannerheimintie 10",
           zip: "00100",
           city: "Helsinki",
-          country: "Finland"
+          country_code: "FI"
         },
         line_items: [
           { title: "Weber Grill Cover", requires_shipping: true }
@@ -102,11 +111,10 @@
         shipping_lines: [
           { title: "Standard Pickup-Point" }
         ]
-      },
-      // Add more orders...
+      }
     ];
 
-    // Initialize Orders Table
+    // Initialize Table
     function initializeTable() {
       const tbody = document.getElementById('orders-table-body');
       
@@ -114,38 +122,99 @@
         const requiresShipping = order.line_items.some(i => i.requires_shipping);
         const shippingMethod = order.shipping_lines?.[0]?.title || 'No shipping';
         const isPickupPoint = shippingMethod === 'Standard Pickup-Point';
-        const rowClass = requiresShipping ? '' : 'no-shipping';
-
-        let pickupActionContent;
-        if (!requiresShipping) {
-          pickupActionContent = 'Digital product';
-        } else if (isPickupPoint) {
-          pickupActionContent = `<button onclick="handlePickupClick(${JSON.stringify(order)}, 'pickup-${index}')">Find Pickup Point</button>`;
-        } else {
-          pickupActionContent = `<span class="home-delivery">${shippingMethod}</span>`;
-        }
 
         return `
-          <tr class="${rowClass}">
+          <tr class="${requiresShipping ? '' : 'no-shipping'}">
             <td>${order.source_name}</td>
             <td>${order.order_number}</td>
             <td>
               ${order.shipping_address?.name || 'N/A'}<br>
               ${order.customer.email}<br>
-              ${order.shipping_address?.phone || 'N/A'}
+              ${order.shipping_address?.address1 || ''}, 
+              ${order.shipping_address?.zip || ''} 
+              ${order.shipping_address?.city || ''}
             </td>
             <td class="clickable" onclick="handleItemClick('${order.product_id}')">
               ${order.line_items.length}
             </td>
-            <td id="pickup-${index}">
-              ${pickupActionContent}
+            <td>
+              ${isPickupPoint ? `
+                <button 
+                  class="pickup-btn"
+                  data-address='${JSON.stringify(order.shipping_address)}'
+                  data-target="pickup-${index}"
+                >
+                  Find Pickup Point
+                </button>
+                <div id="pickup-${index}"></div>
+              ` : `<span class="home-delivery">${shippingMethod}</span>`}
             </td>
           </tr>
         `;
       }).join('');
     }
 
-    // Handle Item Click (Product Image)
+    // Handle Pickup Point Requests
+    document.addEventListener('click', async (event) => {
+      if (event.target.classList.contains('pickup-btn')) {
+        const button = event.target;
+        const address = JSON.parse(button.dataset.address);
+        const targetId = button.dataset.target;
+        const container = document.getElementById(targetId);
+        
+        button.disabled = true;
+        container.innerHTML = '<div class="loading">Searching...</div>';
+
+        try {
+          const response = await fetch('/api/find-pickup-point', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              streetAddress: address.address1,
+              postcode: address.zip,
+              locality: address.city,
+              countryCode: address.country_code
+            })
+          });
+
+          if (!response.ok) {
+            throw new Error(`HTTP error! Status: ${response.status}`);
+          }
+
+          const data = await response.json();
+          updatePickupPoint(data, targetId);
+          
+        } catch (error) {
+          console.error('Pickup Error:', error);
+          container.innerHTML = `<div class="error">${error.message}</div>`;
+        } finally {
+          button.disabled = false;
+        }
+      }
+    });
+
+    // Update Pickup Point Display
+    function updatePickupPoint(data, targetId) {
+      const container = document.getElementById(targetId);
+      const sp = data.servicePoints?.[0];
+      
+      if (!sp) {
+        container.innerHTML = '<div class="error">No pickup points found</div>';
+        return;
+      }
+
+      const address = sp.addresses?.[0] || {};
+      container.innerHTML = `
+        <div class="pickup-info">
+          <strong>${sp.pupCode}</strong><br>
+          ${address.streetAddress || 'Address not available'}<br>
+          ${address.postcode || ''} ${address.city || ''}<br>
+          ${address.countryCode || ''}
+        </div>
+      `;
+    }
+
+    // Product Image Modal
     async function handleItemClick(productId) {
       try {
         const response = await fetch('/api/get-product', {
@@ -154,76 +223,26 @@
           body: JSON.stringify({ productId })
         });
 
-        const productData = await response.json();
-        showProductModal(productData);
-      } catch (error) {
-        alert('Error loading product image: ' + error.message);
-      }
-    }
-
-    // Show Product Image Modal
-    function showProductModal(data) {
-      const imageUrl = data.data?.product?.images?.edges?.[0]?.node?.originalSrc;
-      const modalContent = document.getElementById('modal-content');
-      
-      modalContent.innerHTML = imageUrl 
-        ? `<img src="${imageUrl}" class="product-image" alt="Product image">`
-        : '<p>No image available</p>';
-
-      document.getElementById('product-modal').style.display = 'block';
-      document.getElementById('modal-overlay').style.display = 'block';
-    }
-
-    // Handle Pickup Point Request
-    async function handlePickupClick(order, elementId) {
-      const container = document.getElementById(elementId);
-      container.innerHTML = 'Searching...';
-
-      try {
-        const response = await fetch('/api/find-pickup-point', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            streetAddress: order.shipping_address?.address1 || '',
-            postcode: order.shipping_address?.zip || '',
-            locality: order.shipping_address?.city || '',
-            countryCode: order.shipping_address?.country_code || 'FI'
-          })
-        });
-
         const data = await response.json();
-        updatePickupInfo(data, elementId);
+        const imageUrl = data.data?.product?.images?.edges?.[0]?.node?.originalSrc;
+        
+        document.getElementById('modal-content').innerHTML = imageUrl 
+          ? `<img src="${imageUrl}" class="product-image">`
+          : '<p>No image available</p>';
+          
+        document.getElementById('product-modal').style.display = 'block';
+        document.getElementById('modal-overlay').style.display = 'block';
       } catch (error) {
-        container.innerHTML = 'Error finding pickup point';
+        alert('Error loading image: ' + error.message);
       }
     }
 
-    // Update Pickup Point Display
-    function updatePickupInfo(data, elementId) {
-      const sp = data.servicePoints?.[0];
-      const container = document.getElementById(elementId);
-      
-      if (!sp) {
-        container.innerHTML = 'No pickup points found';
-        return;
-      }
-
-      const address = sp.addresses?.[0] || {};
-      container.innerHTML = `
-        <strong>${sp.pupCode}</strong><br>
-        ${address.streetAddress || ''}<br>
-        ${address.postcode || ''} ${address.city || ''}<br>
-        ${address.countryCode || ''}
-      `;
-    }
-
-    // Close Modal
     function closeModal() {
       document.getElementById('product-modal').style.display = 'none';
       document.getElementById('modal-overlay').style.display = 'none';
     }
 
-    // Initialize on Load
+    // Initialize
     initializeTable();
     document.getElementById('modal-overlay').addEventListener('click', closeModal);
   </script>
