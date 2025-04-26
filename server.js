@@ -14,10 +14,9 @@ app.use(cors({
 app.use(express.json({ verify: (req, res, buf) => { req.rawBody = buf } }));
 app.use(express.static('public'));
 
-// In-memory order storage
 let ordersStore = [];
 
-// Webhook Verification
+// Webhook Verification Middleware
 const verifyWebhook = (req, res, next) => {
   try {
     const hmac = req.get('X-Shopify-Hmac-Sha256');
@@ -34,34 +33,33 @@ const verifyWebhook = (req, res, next) => {
   }
 };
 
-// Webhook Handler
+// Webhook Handler with Global ID Conversion
 app.post('/api/webhook/orders', verifyWebhook, (req, res) => {
   try {
-    const order = req.body;
-    console.log('Received webhook for order:', order.id);
-
+    const webhookOrder = req.body;
+    
     const transformedOrder = {
-      id: order.id,
-      order_number: order.order_number,
-      line_items: order.line_items.map(item => ({
+      id: webhookOrder.id,
+      order_number: webhookOrder.order_number,
+      line_items: webhookOrder.line_items.map(item => ({
         title: item.title,
-        product_id: item.product_id,
+        product_id: `gid://shopify/Product/${item.product_id}`,
         variant_id: item.variant_id,
         requires_shipping: item.requires_shipping
       })),
       shipping_address: {
-        name: order.shipping_address?.name,
-        address1: order.shipping_address?.address1,
-        city: order.shipping_address?.city,
-        zip: order.shipping_address?.zip,
-        country_code: order.shipping_address?.country_code,
-        phone: order.shipping_address?.phone
+        address1: webhookOrder.shipping_address?.address1,
+        address2: webhookOrder.shipping_address?.address2,
+        city: webhookOrder.shipping_address?.city,
+        zip: webhookOrder.shipping_address?.zip,
+        country_code: webhookOrder.shipping_address?.country_code,
+        phone: webhookOrder.shipping_address?.phone
       },
-      shipping_lines: order.shipping_lines.map(shipping => ({
+      shipping_lines: webhookOrder.shipping_lines.map(shipping => ({
         title: shipping.title,
         code: shipping.code
       })),
-      created_at: new Date(order.created_at).toISOString()
+      created_at: new Date().toISOString()
     };
 
     ordersStore = [transformedOrder, ...ordersStore.slice(0, 49)];
@@ -72,7 +70,7 @@ app.post('/api/webhook/orders', verifyWebhook, (req, res) => {
   }
 });
 
-// Get Orders
+// Get Orders Endpoint
 app.get('/api/orders', (req, res) => {
   try {
     res.json(ordersStore);
@@ -81,11 +79,17 @@ app.get('/api/orders', (req, res) => {
   }
 });
 
-// Product Details Endpoint
+// Product Image Endpoint with Global ID Validation
 app.post('/api/get-product', async (req, res) => {
   try {
     const { productId } = req.body;
-    console.log('Fetching product:', productId);
+    
+    if (!productId.startsWith('gid://shopify/Product/')) {
+      return res.status(400).json({ 
+        error: "Invalid product ID format",
+        details: "Must use Shopify Global ID format (gid://shopify/Product/...)"
+      });
+    }
 
     const response = await fetch(
       `https://${process.env.SHOPIFY_STORE}/admin/api/2024-01/graphql.json`,
@@ -96,13 +100,13 @@ app.post('/api/get-product', async (req, res) => {
           'X-Shopify-Access-Token': process.env.ACCESS_TOKEN
         },
         body: JSON.stringify({
-          query: `query GetProductWithImages($id: ID!) {
+          query: `query GetProductImages($id: ID!) {
             product(id: $id) {
               title
               featuredImage {
                 originalSrc
               }
-              images(first: 5) {
+              images(first: 10) {
                 edges {
                   node {
                     originalSrc
@@ -119,7 +123,6 @@ app.post('/api/get-product', async (req, res) => {
     const data = await response.json();
     
     if (data.errors) {
-      console.error('Shopify API Errors:', data.errors);
       return res.status(404).json({ 
         error: 'Product not found',
         details: data.errors
