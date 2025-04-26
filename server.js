@@ -14,6 +14,40 @@ app.use(express.static('public'));
 const SHOPIFY_STORE = process.env.SHOPIFY_STORE;
 const ACCESS_TOKEN = process.env.ACCESS_TOKEN;
 
+
+// Add new endpoint for pickup point lookup
+app.post('/api/find-pickup-point', async (req, res) => {
+  try {
+    const { streetAddress, postcode, locality, countryCode } = req.body;
+    
+    const apiUrl = new URL("https://sbxgw.ecosystem.posti.fi/location/v3/find-by-address");
+    apiUrl.searchParams.append("streetAddress", streetAddress);
+    apiUrl.searchParams.append("postcode", postcode);
+    apiUrl.searchParams.append("locality", locality);
+    apiUrl.searchParams.append("countryCode", countryCode);
+    apiUrl.searchParams.append("limit", "1");
+
+    const postiResponse = await fetch(apiUrl.toString(), {
+      method: 'GET',
+      headers: {
+        "Accept": "application/json",
+        "Authorization": `Bearer ${process.env.POSTI_API_TOKEN}`,
+        "Accept-Language": "en"
+      }
+    });
+
+    const data = await postiResponse.json();
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Existing product endpoint remains the same
+
+
+
+
 app.post('/api/get-product', async (req, res) => {
   try {
     const { productId } = req.body;
