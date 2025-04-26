@@ -1,28 +1,99 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const crypto = require('crypto');
 const fetch = require('node-fetch');
 
 const app = express();
 
-// Middleware
+// Middleware Configuration
 app.use(cors({
   origin: [process.env.RENDER_EXTERNAL_URL, 'http://localhost:3000'],
   optionsSuccessStatus: 200
 }));
-app.use(express.json());
+app.use(express.json({ verify: (req, res, buf) => { req.rawBody = buf } }));
 app.use(express.static('public'));
 
-// Shopify API
+// In-memory order storage (replace with DB in production)
+let ordersStore = [];
+
+// Webhook Verification Middleware
+const verifyWebhook = (req, res, next) => {
+  try {
+    const hmac = req.get('X-Shopify-Hmac-Sha256');
+    const generatedHash = crypto
+      .createHmac('sha256', process.env.SHOPIFY_WEBHOOK_SECRET)
+      .update(req.rawBody)
+      .digest('base64');
+
+    if (generatedHash !== hmac) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    next();
+  } catch (error) {
+    console.error('Webhook verification failed:', error);
+    res.status(401).json({ error: 'Unauthorized' });
+  }
+};
+
+// Webhook Endpoint
+app.post('/api/webhook/orders', verifyWebhook, (req, res) => {
+  try {
+    const webhookOrder = req.body;
+    
+    const transformedOrder = {
+      id: webhookOrder.id,
+      order_number: webhookOrder.order_number,
+      source_name: webhookOrder.source_name,
+      customer: {
+        email: webhookOrder.email,
+        phone: webhookOrder.shipping_address?.phone
+      },
+      shipping_address: {
+        name: webhookOrder.shipping_address?.name,
+        address1: webhookOrder.shipping_address?.address1,
+        address2: webhookOrder.shipping_address?.address2,
+        zip: webhookOrder.shipping_address?.zip,
+        city: webhookOrder.shipping_address?.city,
+        country_code: webhookOrder.shipping_address?.country_code,
+        phone: webhookOrder.shipping_address?.phone
+      },
+      line_items: webhookOrder.line_items.map(item => ({
+        title: item.title,
+        product_id: item.product_id,
+        requires_shipping: item.requires_shipping
+      })),
+      shipping_lines: webhookOrder.shipping_lines.map(shipping => ({
+        title: shipping.title,
+        price: shipping.price
+      })),
+      created_at: new Date(webhookOrder.created_at).toISOString()
+    };
+
+    // Store last 50 orders
+    ordersStore = [transformedOrder, ...ordersStore.slice(0, 49)];
+    res.sendStatus(200);
+  } catch (error) {
+    console.error('Webhook processing error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get Orders Endpoint
+app.get('/api/orders', (req, res) => {
+  try {
+    res.json(ordersStore);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Product Image Endpoint
 app.post('/api/get-product', async (req, res) => {
   try {
     const { productId } = req.body;
     
-    if (!productId?.startsWith('gid://shopify/Product/')) {
-      return res.status(400).json({ error: "Invalid Product ID" });
-    }
-
-    const shopifyRes = await fetch(
+    const response = await fetch(
       `https://${process.env.SHOPIFY_STORE}/admin/api/2024-01/graphql.json`,
       {
         method: 'POST',
@@ -48,26 +119,18 @@ app.post('/api/get-product', async (req, res) => {
       }
     );
 
-    const data = await shopifyRes.json();
+    const data = await response.json();
     res.json(data);
-
   } catch (error) {
-    console.error('Shopify Error:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
-// Posti API
+// Posti API Endpoint
 app.post('/api/find-pickup-point', async (req, res) => {
   try {
     const { streetAddress, postcode, locality, countryCode } = req.body;
     
-    if (!streetAddress || !postcode) {
-      return res.status(400).json({
-        error: "Street address and postcode are required"
-      });
-    }
-
     const postiUrl = new URL("https://sbxgw.ecosystem.posti.fi/location/v3/find-by-address");
     postiUrl.searchParams.append("streetAddress", streetAddress);
     postiUrl.searchParams.append("postcode", postcode);
@@ -83,20 +146,10 @@ app.post('/api/find-pickup-point', async (req, res) => {
       }
     });
 
-    if (!postiRes.ok) {
-      const errorData = await postiRes.json();
-      throw new Error(errorData.message || 'Posti API Error');
-    }
-
     const data = await postiRes.json();
     res.json(data);
-
   } catch (error) {
-    console.error('Posti Error:', error);
-    res.status(500).json({ 
-      error: 'Failed to fetch pickup points',
-      details: error.message
-    });
+    res.status(500).json({ error: error.message });
   }
 });
 

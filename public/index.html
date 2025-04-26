@@ -4,71 +4,22 @@
   <meta charset="UTF-8">
   <title>Shopify Orders</title>
   <style>
-    /* Table Styles */
-    table { border-collapse: collapse; width: 100%; }
-    th, td { border: 1px solid #ddd; padding: 8px; }
-    th { background-color: #f2f2f2; }
-    .no-shipping { background-color: #ffdddd; }
-    .home-delivery { color: #666; font-style: italic; }
-    
-    /* Interactive Elements */
-    .clickable { cursor: pointer; color: #007bff; }
-    button { 
-      padding: 6px 12px; 
-      background-color: #007bff; 
-      color: white; 
-      border: none; 
-      border-radius: 4px; 
-      cursor: pointer;
+    /* Existing styles remain the same */
+    .refresh-button {
+      margin: 10px 0;
+      padding: 8px 16px;
+      background-color: #28a745;
+      color: white;
     }
-    button:hover { background-color: #0056b3; }
-    button:disabled { background-color: #cccccc; }
-
-    /* Modal Styles */
-    .modal { 
-      display: none;
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      background: white;
-      padding: 20px;
-      border-radius: 8px;
-      box-shadow: 0 0 10px rgba(0,0,0,0.3);
-      z-index: 1000;
-      max-width: 80%;
+    .timestamp {
+      color: #666;
+      font-size: 0.9em;
     }
-    .modal-overlay {
-      display: none;
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: rgba(0,0,0,0.5);
-      z-index: 999;
-    }
-    .modal-close {
-      position: absolute;
-      top: 10px;
-      right: 10px;
-      cursor: pointer;
-      font-weight: bold;
-    }
-    .product-image {
-      max-width: 300px;
-      height: auto;
-      margin-bottom: 10px;
-    }
-
-    /* Status Messages */
-    .loading { color: #666; font-style: italic; }
-    .error { color: #dc3545; font-weight: bold; }
-    .pickup-info { background: #f8f9fa; padding: 8px; border-radius: 4px; }
   </style>
 </head>
 <body>
   <h1>Shopify Orders</h1>
+  <button class="refresh-button" onclick="initializeTable()">Refresh Orders</button>
   <table>
     <thead>
       <tr>
@@ -91,50 +42,39 @@
   </div>
 
   <script>
-    // Sample Orders Data
-    const orders = [
-      {
-        product_id: "gid://shopify/Product/8774958317825",
-        source_name: "web",
-        order_number: 1001,
-        customer: { email: "anna@example.com" },
-        shipping_address: {
-          name: "Anna Nieminen",
-          address1: "Mannerheimintie 10",
-          zip: "00100",
-          city: "Helsinki",
-          country_code: "FI"
-        },
-        line_items: [
-          { title: "Weber Grill Cover", requires_shipping: true }
-        ],
-        shipping_lines: [
-          { title: "Standard Pickup-Point" }
-        ]
+    // Order Handling
+    async function initializeTable() {
+      try {
+        const response = await fetch('/api/orders');
+        const orders = await response.json();
+        renderOrders(orders);
+      } catch (error) {
+        console.error('Failed to load orders:', error);
+        alert('Error loading orders');
       }
-    ];
+    }
 
-    // Initialize Table
-    function initializeTable() {
+    function renderOrders(orders) {
       const tbody = document.getElementById('orders-table-body');
       
       tbody.innerHTML = orders.map((order, index) => {
-        const requiresShipping = order.line_items.some(i => i.requires_shipping);
-        const shippingMethod = order.shipping_lines?.[0]?.title || 'No shipping';
-        const isPickupPoint = shippingMethod === 'Standard Pickup-Point';
+        const requiresShipping = order.line_items.some(item => item.requires_shipping);
+        const shippingLine = order.shipping_lines?.[0];
+        const isPickupPoint = shippingLine?.title.includes('Pickup');
 
         return `
           <tr class="${requiresShipping ? '' : 'no-shipping'}">
             <td>${order.source_name}</td>
-            <td>${order.order_number}</td>
+            <td>
+              #${order.order_number}<br>
+              <span class="timestamp">${new Date(order.created_at).toLocaleDateString()}</span>
+            </td>
             <td>
               ${order.shipping_address?.name || 'N/A'}<br>
               ${order.customer.email}<br>
-              ${order.shipping_address?.address1 || ''}, 
-              ${order.shipping_address?.zip || ''} 
-              ${order.shipping_address?.city || ''}
+              ${order.shipping_address?.phone || 'N/A'}
             </td>
-            <td class="clickable" onclick="handleItemClick('${order.product_id}')">
+            <td class="clickable" onclick="handleItemClick('${order.line_items[0]?.product_id}')">
               ${order.line_items.length}
             </td>
             <td>
@@ -147,14 +87,18 @@
                   Find Pickup Point
                 </button>
                 <div id="pickup-${index}"></div>
-              ` : `<span class="home-delivery">${shippingMethod}</span>`}
+              ` : `
+                <span class="home-delivery">
+                  ${shippingLine?.title || 'No shipping info'}
+                </span>
+              `}
             </td>
           </tr>
         `;
       }).join('');
     }
 
-    // Handle Pickup Point Requests
+    // Pickup Point Handling
     document.addEventListener('click', async (event) => {
       if (event.target.classList.contains('pickup-btn')) {
         const button = event.target;
@@ -177,36 +121,29 @@
             })
           });
 
-          if (!response.ok) {
-            throw new Error(`HTTP error! Status: ${response.status}`);
-          }
-
           const data = await response.json();
           updatePickupPoint(data, targetId);
-          
         } catch (error) {
-          console.error('Pickup Error:', error);
-          container.innerHTML = `<div class="error">${error.message}</div>`;
+          container.innerHTML = `<div class="error">Error: ${error.message}</div>`;
         } finally {
           button.disabled = false;
         }
       }
     });
 
-    // Update Pickup Point Display
     function updatePickupPoint(data, targetId) {
       const container = document.getElementById(targetId);
-      const sp = data.servicePoints?.[0];
+      const pickupPoint = data.servicePoints?.[0];
       
-      if (!sp) {
+      if (!pickupPoint) {
         container.innerHTML = '<div class="error">No pickup points found</div>';
         return;
       }
 
-      const address = sp.addresses?.[0] || {};
+      const address = pickupPoint.addresses?.[0] || {};
       container.innerHTML = `
         <div class="pickup-info">
-          <strong>${sp.pupCode}</strong><br>
+          <strong>${pickupPoint.pupCode}</strong><br>
           ${address.streetAddress || 'Address not available'}<br>
           ${address.postcode || ''} ${address.city || ''}<br>
           ${address.countryCode || ''}
@@ -223,17 +160,17 @@
           body: JSON.stringify({ productId })
         });
 
-        const data = await response.json();
-        const imageUrl = data.data?.product?.images?.edges?.[0]?.node?.originalSrc;
+        const productData = await response.json();
+        const imageUrl = productData.data?.product?.images?.edges?.[0]?.node?.originalSrc;
         
         document.getElementById('modal-content').innerHTML = imageUrl 
-          ? `<img src="${imageUrl}" class="product-image">`
+          ? `<img src="${imageUrl}" class="product-image" alt="Product image">`
           : '<p>No image available</p>';
           
         document.getElementById('product-modal').style.display = 'block';
         document.getElementById('modal-overlay').style.display = 'block';
       } catch (error) {
-        alert('Error loading image: ' + error.message);
+        alert('Error loading product image: ' + error.message);
       }
     }
 
@@ -242,8 +179,9 @@
       document.getElementById('modal-overlay').style.display = 'none';
     }
 
-    // Initialize
+    // Initialization
     initializeTable();
+    setInterval(initializeTable, 30000); // Auto-refresh every 30 seconds
     document.getElementById('modal-overlay').addEventListener('click', closeModal);
   </script>
 </body>
