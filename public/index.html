@@ -6,27 +6,32 @@
 <body>
   <h1>Get Product Data</h1>
   <input type="text" id="productId" placeholder="Enter Product ID (e.g., gid://shopify/Product/8774958317825)">
-  <button onclick="fetchProduct()">Fetch</button>
+  <button onclick="fetchProduct()" id="fetchBtn">Fetch</button>
   <br><br>
   <textarea id="result" rows="15" cols="80" readonly></textarea>
 
   <script>
     async function fetchProduct() {
-      const productId = document.getElementById('productId').value;
-      const resultField = document.getElementById('result');
-      resultField.value = "Loading...";
+      const btn = document.getElementById('fetchBtn');
+      const result = document.getElementById('result');
+      btn.disabled = true;
+      result.value = 'Loading...';
 
       try {
         const response = await fetch('/api/get-product', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ productId })
+          body: JSON.stringify({ 
+            productId: document.getElementById('productId').value 
+          })
         });
 
         const data = await response.json();
-        resultField.value = JSON.stringify(data, null, 2);
+        result.value = JSON.stringify(data, null, 2);
       } catch (error) {
-        resultField.value = `Error: ${error.message}`;
+        result.value = `Error: ${error.message}`;
+      } finally {
+        btn.disabled = false;
       }
     }
   </script>
