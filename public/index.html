@@ -216,6 +216,12 @@
                 <div id="pickup-${index}"></div>
               ` : 'Home Delivery'}
             </td>
+
+            <td>
+              <button onclick="fulfillOrder('${order.id}', '${tracking_number_here}')">
+                Fulfill Order
+              </button>
+            </td>
           </tr>
         `;
       }).join('');
@@ -292,14 +298,14 @@
         <div>
           <strong>${closestPoint.pupCode}</strong><br>
          
-          ${closestPoint.publicName || 'No public name available'}<br>
+          ${closestPoint.addresses?.[0]?.publicName || 'No public name available'}<br>
           ${closestPoint.addresses?.[0]?.streetAddress || ''}<br>
           ${closestPoint.addresses?.[0]?.postcode || ''} 
           ${closestPoint.addresses?.[0]?.city || ''}<br>
-          ${closestPoint.countryCode || ''}<br>
+          ${closestPoint.addresses?.[0]?.countryCode || ''}<br>
           ${closestPoint.parcelLocker ? 'Parcel Locker' : 'Post Office'}<br> <!-- NEW: show locker/post office -->
           Distance from customer: ${distanceText} <!-- NEW: show distance -->
-        </div>in 
+        </div>
       `;
     } else {
       container.innerHTML = '<div class="error-message">No pickup points found</div>';
@@ -324,6 +330,37 @@
       modalContent.innerHTML = `<div class="error-message">${message}</div>`;
       showModal();
     }
+
+
+
+
+
+
+  async function fulfillOrder(orderId) {
+  if (!confirm('Are you sure you want to fulfill this order?')) return;
+
+  try {
+    const response = await fetch('/api/fulfill-order', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        orderId: orderId,
+        tracking_number: trackingNumber
+      })
+    });
+
+    const data = await response.json();
+    if (data.success) {
+      alert('Order fulfilled successfully!');
+    } else {
+      console.error(data.error);
+      alert('Failed to fulfill order.');
+    }
+  } catch (err) {
+    console.error('Error fulfilling order:', err);
+    alert('Error fulfilling order: ' + err.message);
+  }
+}
 
     // Initialization
     document.getElementById('modal-overlay').addEventListener('click', closeModal);

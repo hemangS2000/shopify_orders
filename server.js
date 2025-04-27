@@ -168,5 +168,86 @@ app.post('/api/find-pickup-point', async (req, res) => {
   }
 });
 
+
+//GET ORDER ID - POST TO FULLFILL
+
+app.post('/api/fulfill-order', async (req, res) => {
+  const { orderId } = req.body;
+  try {
+    // 1️⃣ GET fulfillment orders (REST)
+    const getResp = await fetch(
+      `https://${process.env.SHOPIFY_STORE}/admin/api/2025-04/orders/${orderId}/fulfillment_orders.json`,
+      {
+        headers: {
+          'X-Shopify-Access-Token': process.env.ACCESS_TOKEN,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+    const getData = await getResp.json();
+    const fulfillmentOrderId = getData.fulfillment_orders?.[0]?.id;
+    if (!fulfillmentOrderId) {
+      return res.status(400).json({ success: false, error: 'No fulfillment order found' });
+    }
+
+    // 2️⃣ POST GraphQL fulfillmentCreate
+    const mutation = `
+      mutation fulfillmentCreate($fulfillment: FulfillmentInput!) {
+        fulfillmentCreate(fulfillment: $fulfillment) {
+          fulfillment { id status }
+          userErrors { field message }
+        }
+      }
+    `;
+    const variables = {
+      fulfillment: {
+        lineItemsByFulfillmentOrder: [
+          {
+            fulfillmentOrderId: `gid://shopify/FulfillmentOrder/${fulfillmentOrderId}`,
+            fulfillmentOrderLineItems: []
+          }
+        ],
+        notifyCustomer: false,
+        trackingInfo: {
+          company: "Postii",
+          number: "tracking_number",
+          url: `https://www.posti.fi/en/tracking#/lahetys/tracking_number`
+        }
+      }
+    };
+
+    const postResp = await fetch(
+      `https://${process.env.SHOPIFY_STORE}/admin/api/2025-04/graphql.json`,
+      {
+        method: 'POST',
+        headers: {
+          'X-Shopify-Access-Token': process.env.ACCESS_TOKEN,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ query: mutation, variables })
+      }
+    );
+    const postData = await postResp.json();
+    const status = postData?.data?.fulfillmentCreate?.fulfillment?.status;
+    if (status === 'SUCCESS') {
+      return res.json({ success: true });
+    } else {
+      return res
+        .status(400)
+        .json({ success: false, error: postData.data.fulfillmentCreate.userErrors });
+    }
+  } catch (err) {
+    console.error('Fulfillment error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+
+
+
+
+
+
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
