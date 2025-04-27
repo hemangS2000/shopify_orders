@@ -174,7 +174,7 @@ app.post('/api/find-pickup-point', async (req, res) => {
 app.post('/api/fulfill-order', async (req, res) => {
   const { orderId } = req.body;
   try {
-    // 1️⃣ GET fulfillment orders (REST)
+    // 1️ GET fulfillment orders (REST)
     const getResp = await fetch(
       `https://${process.env.SHOPIFY_STORE}/admin/api/2025-04/orders/${orderId}/fulfillment_orders.json`,
       {
@@ -190,7 +190,7 @@ app.post('/api/fulfill-order', async (req, res) => {
       return res.status(400).json({ success: false, error: 'No fulfillment order found' });
     }
 
-    // 2️⃣ POST GraphQL fulfillmentCreate
+    // 2️ POST GraphQL fulfillmentCreate
     const mutation = `
       mutation fulfillmentCreate($fulfillment: FulfillmentInput!) {
         fulfillmentCreate(fulfillment: $fulfillment) {
@@ -210,8 +210,8 @@ app.post('/api/fulfill-order', async (req, res) => {
         notifyCustomer: false,
         trackingInfo: {
           company: "Postii",
-          number: "tracking_number",
-          url: `https://www.posti.fi/en/tracking#/lahetys/tracking_number`
+          number: "856236255210",
+          url: `https://www.posti.fi/en/tracking#/lahetys/856236255210`
         }
       }
     };

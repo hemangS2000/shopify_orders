@@ -161,6 +161,7 @@
         <th>Items</th>
         <th>Shipping Method</th>
         <th>Actions</th>
+        <th>Fulfill</th>
       </tr>
     </thead>
     <tbody id="orders-table-body"></tbody>
@@ -218,7 +219,7 @@
             </td>
 
             <td>
-              <button onclick="fulfillOrder('${order.id}', '${tracking_number_here}')">
+              <button onclick="fulfillOrder('${order.id}')">
                 Fulfill Order
               </button>
             </td>
@@ -344,8 +345,7 @@
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        orderId: orderId,
-        tracking_number: trackingNumber
+        orderId: orderId
       })
     });
 
