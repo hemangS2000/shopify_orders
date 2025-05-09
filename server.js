@@ -211,24 +211,17 @@ app.post('/api/update-measurements', async (req, res) => {
 app.post('/api/get-product', async (req, res) => {
   try {
     const { orderId } = req.body;
-    
     const order = await Order.findOne({ shopifyId: orderId.toString() }).lean();
 
     if (!order) {
       return res.status(404).json({ 
-        error: 'Order not found',
-        details: 'Order may have expired from memory'
+        error: 'Order not found'
       });
     }
 
+    // Return the complete order with line_items
     res.json({
-      data: {
-        order: {
-          line_items: order.line_items.map(item => ({
-            product_data: item.product_data
-          }))
-        }
-      }
+      data: order  // Changed structure to match frontend expectations
     });
   } catch (error) {
     console.error('Product fetch error:', error);

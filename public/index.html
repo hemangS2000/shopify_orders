@@ -234,14 +234,42 @@
     let currentOrders = [];
 
     async function refreshOrders() {
-      try {
-        const response = await fetch('/api/orders');
-        currentOrders = await response.json();
-        renderOrders();
-      } catch (error) {
-        showError('Failed to refresh orders: ' + error.message);
-      }
-    }
+          try {
+            // Save current input values before refresh
+            const inputsToSave = {};
+            currentOrders.forEach((order, index) => {
+              if (!order.shopifyId) return;
+              
+              inputsToSave[order.shopifyId] = {
+                length: document.getElementById(`length-${index}`)?.value,
+                width: document.getElementById(`width-${index}`)?.value,
+                height: document.getElementById(`height-${index}`)?.value,
+                weight: document.getElementById(`weight-${index}`)?.value,
+                boxes: document.getElementById(`boxes-${index}`)?.value,
+                method: document.getElementById(`method-${index}`)?.value
+              };
+            });
+
+            const response = await fetch('/api/orders');
+            currentOrders = await response.json();
+            renderOrders();
+
+            // Restore input values after refresh
+            currentOrders.forEach((order, index) => {
+              if (!order.shopifyId || !inputsToSave[order.shopifyId]) return;
+              
+              const saved = inputsToSave[order.shopifyId];
+              if (saved.length) document.getElementById(`length-${index}`).value = saved.length;
+              if (saved.width) document.getElementById(`width-${index}`).value = saved.width;
+              if (saved.height) document.getElementById(`height-${index}`).value = saved.height;
+              if (saved.weight) document.getElementById(`weight-${index}`).value = saved.weight;
+              if (saved.boxes) document.getElementById(`boxes-${index}`).value = saved.boxes;
+              if (saved.method) document.getElementById(`method-${index}`).value = saved.method;
+            });
+          } catch (error) {
+            showError('Failed to refresh orders: ' + error.message);
+          }
+        }
 
     function renderOrders() {
       const tbody = document.getElementById('orders-table-body');
@@ -271,28 +299,28 @@
                 <div class="dimensions-input">
                   <input type="number" min="1" max="999" placeholder="L" 
                         id="length-${index}" value="${order.dimensions?.length || ''}"
-                        onchange="saveMeasurements('${order.id}', ${index})">
+                        onchange="saveMeasurements('${order.shopifyId}', ${index})">
                   <span>x</span>
                   <input type="number" min="1" max="999" placeholder="W" 
                         id="width-${index}" value="${order.dimensions?.width || ''}"
-                        onchange="saveMeasurements('${order.id}', ${index})">
+                        onchange="saveMeasurements('${order.shopifyId}', ${index})">
                   <span>x</span>
                   <input type="number" min="1" max="999" placeholder="H" 
                         id="height-${index}" value="${order.dimensions?.height || ''}"
-                        onchange="saveMeasurements('${order.id}', ${index})">
+                        onchange="saveMeasurements('${order.shopifyId}', ${index})">
                 </div>
 
                 <!-- Second line: weight and box count -->
                 <div class="dimensions-input" style="margin-top:0.5rem;">
-                  <input type="number" min="0.1" max="99" step="0.1" placeholder="kg" 
+                  Weight: <input type="number" min="0.1" max="99" step="0.1" placeholder="kg" 
                         class="weight-input" id="weight-${index}"
                         value="${order.dimensions?.weight || ''}"
-                        onchange="saveMeasurements('${order.id}', ${index})">
+                        onchange="saveMeasurements('${order.shopifyId}', ${index})">
                   <span> / </span>
                   <input type="number" min="1" max="99" placeholder="#" 
                         class="box-input" id="boxes-${index}"
                         value="${order.dimensions?.boxes || ''}"
-                        onchange="saveMeasurements('${order.id}', ${index})">
+                        onchange="saveMeasurements('${order.shopifyId}', ${index})">
                 </div>
               </div>
             </td>
@@ -324,74 +352,80 @@
 
 
     async function saveMeasurements(orderId, index) {
-      const length = document.getElementById(`length-${index}`).value;
-      const width  = document.getElementById(`width-${index}`).value;
-      const height = document.getElementById(`height-${index}`).value;
-      const weight = document.getElementById(`weight-${index}`).value;
-      const boxes  = document.getElementById(`boxes-${index}`).value;
+      const dimensions = {
+        length: Number(document.getElementById(`length-${index}`).value),
+        width: Number(document.getElementById(`width-${index}`).value),
+        height: Number(document.getElementById(`height-${index}`).value),
+        weight: Number(document.getElementById(`weight-${index}`).value),
+        boxes: Number(document.getElementById(`boxes-${index}`).value)
+      };
 
       try {
-        await fetch('/api/update-measurements', {
+        const response = await fetch('/api/update-measurements', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            orderId,
-            dimensions: { length, width, height, weight, boxes }
+          body: JSON.stringify({ 
+            orderId: orderId,
+            dimensions 
           })
         });
+        
+        if (!response.ok) throw new Error('Failed to save');
       } catch (err) {
-        console.error('Failed to save measurements:', err);
+        console.error('Save failed:', err);
+        alert('Failed to save measurements. Please try again.');
       }
     }
 
 
 
     async function showProductImages(orderIndex) {
-  try {
-    const order = currentOrders[orderIndex];
-    document.getElementById('modal-content').innerHTML = '<div class="loading">Loading product details...</div>';
-    showModal();
+      try {
+        const order = currentOrders[orderIndex];
+        document.getElementById('modal-content').innerHTML = '<div class="loading">Loading product details...</div>';
+        showModal();
 
-    // Get the pre-fetched product data
-    const response = await fetch('/api/get-product', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ orderId: order.id })
-    });
+        // Get the pre-fetched product data
+        const response = await fetch('/api/get-product', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ orderId: order.shopifyId })  // Use shopifyId instead of id
+        });
 
-    const data = await response.json();
-    let imagesHTML = '';
+        const data = await response.json();
+        let imagesHTML = '';
 
-    data.data.order.line_items.forEach(item => {
-      const product = item.product_data;
-      if (product) {
-        imagesHTML += `
-          <div class="product-section">
-            <h3>${product.title} (Qty: ${item.quantity})</h3>
-            ${product.metafield?.value ? `<p>${product.metafield.value}</p>` : ''}
-            <div class="product-images">
-              ${product.images.edges.map(img => `
-                <img src="${img.node.originalSrc}" 
-                     class="product-image"
-                     onerror="this.remove()"
-                     alt="${product.title}">
-              `).join('')}
-            </div>
-          </div>
+        // Changed from data.data.order.line_items to data.data.line_items
+        data.data.line_items.forEach(item => {
+          const product = item.product_data;
+          if (product) {
+            imagesHTML += `
+              <div class="product-section">
+                <h3>${product.title} (Qty: ${item.quantity})</h3>
+                ${product.metafield?.value ? `<p>${product.metafield.value}</p>` : ''}
+                <div class="product-images">
+                  ${product.images.edges.map(img => `
+                    <img src="${img.node.originalSrc}" 
+                        class="product-image"
+                        onerror="this.remove()"
+                        alt="${product.title}">
+                  `).join('')}
+                </div>
+              </div>
+            `;
+          }
+        });
+
+        document.getElementById('modal-content').innerHTML = imagesHTML || 
+          '<div class="error-message">No product images available</div>';
+        
+        document.getElementById('modal-title').textContent = `Order #${order.orderNumber} Products`;
+      } catch (error) {
+        document.getElementById('modal-content').innerHTML = `
+          <div class="error-message">Error: ${error.message}</div>
         `;
       }
-    });
-
-    document.getElementById('modal-content').innerHTML = imagesHTML || 
-      '<div class="error-message">No product images available</div>';
-    
-    document.getElementById('modal-title').textContent = `Order #${order.order_number} Products`;
-  } catch (error) {
-    document.getElementById('modal-content').innerHTML = `
-      <div class="error-message">Error: ${error.message}</div>
-    `;
-  }
-}
+    }
 
   async function handlePickup(index) {
   const order = currentOrders[index];
