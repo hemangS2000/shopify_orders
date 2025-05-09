@@ -280,7 +280,7 @@
 
         return `
           <tr>
-            <td>#${order.order_number}</td>
+            <td>#${order.orderNumber}</td>
             <td>
               ${address.name || ''}<br>
               ${address.address1 || ''}<br>
@@ -510,7 +510,7 @@
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        orderId: order.shopifyId
+        orderId: orderId
       })
     });
 
