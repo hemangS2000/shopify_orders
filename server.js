@@ -34,22 +34,73 @@ const verifyWebhook = (req, res, next) => {
 };
 
 // Webhook Handler with Global ID Conversion
-app.post('/api/webhook/orders', verifyWebhook, (req, res) => {
+app.post('/api/webhook/orders', verifyWebhook, async (req, res) => {
   try {
     const webhookOrder = req.body;
     const totalItemCount = webhookOrder.line_items.reduce((sum, item) => sum + item.current_quantity, 0);
 
+    // Prepare all product IDs for batch query
+    const productIds = webhookOrder.line_items.map(
+      item => `gid://shopify/Product/${item.product_id}`
+    );
+
+    // Batch fetch all product data in a single API call
+    const productResponse = await fetch(
+      `https://${process.env.SHOPIFY_STORE}/admin/api/2024-01/graphql.json`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Shopify-Access-Token': process.env.ACCESS_TOKEN
+        },
+        body: JSON.stringify({
+          query: `query GetMultipleProductDetails($ids: [ID!]!, $namespace: String!, $key: String!) {
+            nodes(ids: $ids) {
+              ... on Product {
+                id
+                title
+                featuredImage { originalSrc }
+                images(first: 1) { edges { node { originalSrc } } }
+                metafield(namespace: $namespace, key: $key) { value }
+              }
+            }
+          }`,
+          variables: {
+            ids: productIds,
+            namespace: "shopify_data",
+            key: "mini_title"
+          }
+        })
+      }
+    );
+
+    const productData = await productResponse.json();
+    const productsById = {};
+    
+    // Create a lookup dictionary for products
+    productData.data?.nodes?.forEach(product => {
+      if (product) {
+        productsById[product.id] = product;
+      }
+    });
+
+    // Transform line items with product data
+    const lineItemsWithProductData = webhookOrder.line_items.map(item => {
+      const productId = `gid://shopify/Product/${item.product_id}`;
+      return {
+        title: item.title,
+        product_id: productId,
+        variant_id: item.variant_id,
+        requires_shipping: item.requires_shipping,
+        quantity: item.current_quantity,
+        product_data: productsById[productId] || null
+      };
+    });
 
     const transformedOrder = {
       id: webhookOrder.id,
       order_number: webhookOrder.order_number,
-      line_items: webhookOrder.line_items.map(item => ({
-        title: item.title,
-        product_id: `gid://shopify/Product/${item.product_id}`,
-        variant_id: item.variant_id,
-        requires_shipping: item.requires_shipping,
-        quantity: item.current_quantity
-      })),
+      line_items: lineItemsWithProductData,
       total_item_count: totalItemCount,
       shipping_address: {
         name: webhookOrder.shipping_address?.name,
@@ -84,64 +135,35 @@ app.get('/api/orders', (req, res) => {
   }
 });
 
-// Product Image Endpoint with Global ID Validation
+// Updated Product Image Endpoint (uses pre-fetched data)
 app.post('/api/get-product', async (req, res) => {
   try {
-    const { productId } = req.body;
+    const { orderId } = req.body;
     
-    if (!productId.startsWith('gid://shopify/Product/')) {
-      return res.status(400).json({ 
-        error: "Invalid product ID format",
-        details: "Must use Shopify Global ID format (gid://shopify/Product/...)"
-      });
-    }
-
-    const response = await fetch(
-      `https://${process.env.SHOPIFY_STORE}/admin/api/2024-01/graphql.json`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Shopify-Access-Token': process.env.ACCESS_TOKEN
-        },
-        body: JSON.stringify({
-          query: `query GetProductImages($id: ID!) {
-            product(id: $id) {
-              title
-              featuredImage {
-                originalSrc
-              }
-              images(first: 10) {
-                edges {
-                  node {
-                    originalSrc
-                  }
-                }
-              }
-            }
-          }`,
-          variables: { id: productId }
-        })
-      }
-    );
-
-    const data = await response.json();
-    
-    if (data.errors) {
+    const order = ordersStore.find(o => o.id === orderId);
+    if (!order) {
       return res.status(404).json({ 
-        error: 'Product not found',
-        details: data.errors
+        error: 'Order not found',
+        details: 'Order may have expired from memory'
       });
     }
 
-    res.json(data);
+    res.json({
+      data: {
+        order: {
+          line_items: order.line_items.map(item => ({
+            product_data: item.product_data
+          }))
+        }
+      }
+    });
   } catch (error) {
     console.error('Product fetch error:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
-// Posti API Endpoint
+// Posti API Endpoint (unchanged)
 app.post('/api/find-pickup-point', async (req, res) => {
   try {
     const { streetAddress, postcode, locality, countryCode } = req.body;
@@ -168,9 +190,7 @@ app.post('/api/find-pickup-point', async (req, res) => {
   }
 });
 
-
-//GET ORDER ID - POST TO FULLFILL
-
+// Fulfillment Endpoint (unchanged)
 app.post('/api/fulfill-order', async (req, res) => {
   const { orderId } = req.body;
   try {
@@ -241,13 +261,6 @@ app.post('/api/fulfill-order', async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
-
-
-
-
-
-
-
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
