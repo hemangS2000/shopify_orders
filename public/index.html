@@ -193,6 +193,13 @@
       gap: 1rem;
       margin-top: 0.5rem;
     }
+    .box-input {
+      width: 40px;
+      padding: 5px;
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      text-align: center;
+    }
   
   </style>
 </head>
@@ -206,8 +213,7 @@
         <th>Order #</th>
         <th>Shipping Address</th>
         <th>Items</th>
-        <th>Dimensions (cm)</th>
-        <th>Weight (kg)</th>
+        <th>Measurements</th>
         <th>Shipping Method</th>
         <th>Choose Service</th>
         <th>Actions</th>
@@ -260,17 +266,35 @@
               `).join('')}
             </td>
             <td>
-              <div class="dimensions-input">
-                <input type="number" min="1" max="999" placeholder="L" id="length-${index}">
-                <span>x</span>
-                <input type="number" min="1" max="999" placeholder="W" id="width-${index}">
-                <span>x</span>
-                <input type="number" min="1" max="999" placeholder="H" id="height-${index}">
+              <div class="measurements-column">
+                <!-- First line: L×W×H -->
+                <div class="dimensions-input">
+                  <input type="number" min="1" max="999" placeholder="L" 
+                        id="length-${index}" value="${order.dimensions?.length || ''}"
+                        onchange="saveMeasurements('${order.id}', ${index})">
+                  <span>x</span>
+                  <input type="number" min="1" max="999" placeholder="W" 
+                        id="width-${index}" value="${order.dimensions?.width || ''}"
+                        onchange="saveMeasurements('${order.id}', ${index})">
+                  <span>x</span>
+                  <input type="number" min="1" max="999" placeholder="H" 
+                        id="height-${index}" value="${order.dimensions?.height || ''}"
+                        onchange="saveMeasurements('${order.id}', ${index})">
+                </div>
+
+                <!-- Second line: weight and box count -->
+                <div class="dimensions-input" style="margin-top:0.5rem;">
+                  <input type="number" min="0.1" max="99" step="0.1" placeholder="kg" 
+                        class="weight-input" id="weight-${index}"
+                        value="${order.dimensions?.weight || ''}"
+                        onchange="saveMeasurements('${order.id}', ${index})">
+                  <span> / </span>
+                  <input type="number" min="1" max="99" placeholder="#" 
+                        class="box-input" id="boxes-${index}"
+                        value="${order.dimensions?.boxes || ''}"
+                        onchange="saveMeasurements('${order.id}', ${index})">
+                </div>
               </div>
-            </td>
-            <td>
-              <input type="number" min="0.1" max="99" step="0.1" placeholder="0.0" 
-                     class="weight-input" id="weight-${index}">
             </td>
             <td>${shipping?.title || 'Standard Shipping'}</td>
             <td>
@@ -297,6 +321,30 @@
         `;
       }).join('');
     }
+
+
+    async function saveMeasurements(orderId, index) {
+      const length = document.getElementById(`length-${index}`).value;
+      const width  = document.getElementById(`width-${index}`).value;
+      const height = document.getElementById(`height-${index}`).value;
+      const weight = document.getElementById(`weight-${index}`).value;
+      const boxes  = document.getElementById(`boxes-${index}`).value;
+
+      try {
+        await fetch('/api/update-measurements', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            orderId,
+            dimensions: { length, width, height, weight, boxes }
+          })
+        });
+      } catch (err) {
+        console.error('Failed to save measurements:', err);
+      }
+    }
+
+
 
     async function showProductImages(orderIndex) {
   try {

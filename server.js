@@ -5,6 +5,48 @@ const crypto = require('crypto');
 const fetch = require('node-fetch');
 
 const app = express();
+const mongoose = require('mongoose');
+
+mongoose.connect(process.env.MONGODB_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true
+})
+.then(() => console.log('MongoDB connected'))
+.catch(err => console.error('MongoDB connection error:', err));
+
+// 1️⃣ Create a new Schema object
+const OrderSchema = new mongoose.Schema({
+  // store Shopify’s numeric order ID as `shopifyId` (string so Mongoose can index it easily)
+  shopifyId:     { type: String, unique: true, required: true },
+  orderNumber:   { type: Number, required: true },
+
+  // your existing line_items array (we’ll let it be “any” shape for now)
+  line_items:    { type: Array, default: [] },
+
+  // shipping_address as a plain JS object
+  shipping_address: { type: Object, default: {} },
+
+  // shipping_lines array
+  shipping_lines:   { type: Array, default: [] },
+
+  // the timestamp when Shopify sent the order
+  created_at:       { type: Date, default: Date.now },
+
+  dimensions: {
+    length: { type: Number, default: null },  // L in cm
+    width:  { type: Number, default: null },  // W in cm
+    height: { type: Number, default: null },  // H in cm
+    weight: { type: Number, default: null },  // weight in kg
+    boxes:  { type: Number, default: null }   // box count, whole number
+  }
+}, {
+  timestamps: true
+});
+
+// 2️⃣ Compile the schema into a Model class
+const Order = mongoose.model('Order', OrderSchema);
+
+
 
 // Middleware Configuration
 app.use(cors({
@@ -14,7 +56,6 @@ app.use(cors({
 app.use(express.json({ verify: (req, res, buf) => { req.rawBody = buf } }));
 app.use(express.static('public'));
 
-let ordersStore = [];
 
 // Webhook Verification Middleware
 const verifyWebhook = (req, res, next) => {
@@ -67,8 +108,8 @@ app.post('/api/webhook/orders', verifyWebhook, async (req, res) => {
           }`,
           variables: {
             ids: productIds,
-            namespace: "shopify_data",
-            key: "mini_title"
+            namespace: "test_data",
+            key: "binding_mount"
           }
         })
       }
@@ -98,8 +139,8 @@ app.post('/api/webhook/orders', verifyWebhook, async (req, res) => {
     });
 
     const transformedOrder = {
-      id: webhookOrder.id,
-      order_number: webhookOrder.order_number,
+      shopifyId: webhookOrder.id.toString(),
+      orderNumber: webhookOrder.order_number,
       line_items: lineItemsWithProductData,
       total_item_count: totalItemCount,
       shipping_address: {
@@ -118,29 +159,61 @@ app.post('/api/webhook/orders', verifyWebhook, async (req, res) => {
       created_at: new Date().toISOString()
     };
 
-    ordersStore = [transformedOrder, ...ordersStore.slice(0, 49)];
+     // Upsert into Mongo:
+    await Order.findOneAndUpdate(
+      { shopifyId: transformedOrder.shopifyId },
+      { $set: transformedOrder },
+      { upsert: true, setDefaultsOnInsert: true }
+    );
+
     res.sendStatus(200);
-  } catch (error) {
-    console.error('Webhook processing error:', error);
+  } catch (err) {
+    console.error('Webhook error:', err);
     res.status(500).send('Internal Server Error');
   }
 });
 
 // Get Orders Endpoint
-app.get('/api/orders', (req, res) => {
+app.get('/api/orders', async (req, res) => {
   try {
-    res.json(ordersStore);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+    const orders = await Order.find()
+      .sort({ created_at: -1 })
+      .limit(50)
+      .lean();
+    res.json(orders);
+  } catch (err) {
+    console.error('Fetch orders error:', err);
+    res.status(500).json({ error: err.message });
   }
 });
+
+
+app.post('/api/update-measurements', async (req, res) => {
+  const { orderId, dimensions } = req.body;
+  try {
+    const updated = await Order.findOneAndUpdate(
+      { shopifyId: orderId.toString() },
+      { $set: { dimensions } },
+      { new: true }
+    );
+    if (!updated) {
+      return res.status(404).json({ success: false, error: 'Order not found' });
+    }
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Save measurements error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 
 // Updated Product Image Endpoint (uses pre-fetched data)
 app.post('/api/get-product', async (req, res) => {
   try {
     const { orderId } = req.body;
     
-    const order = ordersStore.find(o => o.id === orderId);
+    const order = await Order.findOne({ shopifyId: orderId.toString() }).lean();
+
     if (!order) {
       return res.status(404).json({ 
         error: 'Order not found',
