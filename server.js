@@ -155,8 +155,10 @@ app.post('/api/webhook/orders', verifyWebhook, async (req, res) => {
     let defaultMethod = 'home_delivery';
 
     // if your “High Price” or “Low Price” shipping line means pickup…
-    if (shippingTitle === 'High Price' || shippingTitle === 'Low Price') {
+    if (shippingTitle === 'Standard - Pickup Point') {
       defaultMethod = 'service_point';
+    }else if (shippingTitle === 'Standard - Home Delivery') {
+      defaultMethod = 'home_delivery';
     }
 
     const transformedOrder = {
