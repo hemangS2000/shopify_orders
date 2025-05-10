@@ -333,21 +333,20 @@
               </select>
             </td>
             <td>
-              ${shipping?.title === 'High Price' || shipping?.title === 'Low Price' ? `
+              ${document.getElementById(`method-${index}`)?.value === 'service_point' ? `
                 ${!order.pickupPoint ? `
-                  <button onclick="handlePickup(${index})">
+                  <button id="findPickup-${index}" onclick="handlePickup(${index})">
                     Find Pickup
                   </button>
                 ` : ''}
                 <div id="pickup-${index}">
                   ${order.pickupPoint ? `
                     <div style="margin-top: 5px; font-size: 0.9em;">
-                      <strong>${order.pickupPoint.pupCode || 'Selected Point'}</strong><br>
-                      ${order.pickupPoint.publicName || ''}<br>
+                      <strong>${order.pickupPoint.publicName || ''}</strong><br>
                       ${order.pickupPoint.streetAddress || ''}<br>
                       ${order.pickupPoint.postcode || ''} ${order.pickupPoint.city || ''}<br>
                       ${order.pickupPoint.parcelLocker ? 'Parcel Locker' : 'Post Office'}<br>
-                      Distance: ${order.pickupPoint.distance}
+                      <b>Distance:</b> ${order.pickupPoint.distance}
                     </div>
                   ` : ''}
                 </div>
@@ -445,6 +444,12 @@
     }
 
   async function handlePickup(index) {
+
+    if (document.getElementById(`method-${index}`).value !== 'service_point') {
+    return;
+  }
+
+  document.getElementById(`findPickup-${index}`).style.display = 'none';
   const order = currentOrders[index];
   const container = document.getElementById(`pickup-${index}`);
 
@@ -499,14 +504,13 @@
       });
 
       container.innerHTML = `
-        <div>
-          <strong>${pickupPointData.pupCode}</strong><br>
-          ${pickupPointData.publicName}<br>
+        <div style="margin-top: 5px; font-size: 0.9em;">
+          <strong>${pickupPointData.publicName}</strong><br>
           ${pickupPointData.streetAddress}<br>
           ${pickupPointData.postcode} ${pickupPointData.city}<br>
           ${pickupPointData.countryCode}<br>
           ${pickupPointData.parcelLocker ? 'Parcel Locker' : 'Post Office'}<br>
-          Distance from customer: ${pickupPointData.distance}
+          <b>Distance:</b> ${pickupPointData.distance}
         </div>
       `;
     } else {
@@ -615,6 +619,13 @@ async function createPostiShipment(index) {
     alert('Error fulfilling order: ' + err.message);
   }
 }
+
+document.addEventListener('change', function(e) {
+  if (e.target.classList.contains('shipping-method-select')) {
+    const index = e.target.id.split('-')[1];
+    renderOrders(); // Re-render the row when selection changes
+  }
+});
 
     // Initialization
     document.getElementById('modal-overlay').addEventListener('click', closeModal);
