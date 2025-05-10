@@ -49,7 +49,8 @@ const OrderSchema = new mongoose.Schema({
     parcelLocker: Boolean,
     distance: String,
   },
-  isFulfilled: { type: Boolean, default: false }
+  isFulfilled: { type: Boolean, default: false },
+  shipping_method: { type: String, enum: ['service_point', 'home_delivery'] }
 }, {
   timestamps: true
 });
@@ -198,13 +199,13 @@ app.get('/api/orders', async (req, res) => {
   }
 });
 
-
+//measurements endpoint
 app.post('/api/update-measurements', async (req, res) => {
-  const { orderId, dimensions } = req.body;
+  const { orderId, dimensions, method } = req.body;
   try {
     const updated = await Order.findOneAndUpdate(
       { shopifyId: orderId.toString() },
-      { $set: { dimensions } },
+      { $set: { dimensions, shipping_method: method } },
       { new: true }
     );
     if (!updated) {

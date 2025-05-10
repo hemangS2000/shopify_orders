@@ -200,6 +200,13 @@
       border-radius: 4px;
       text-align: center;
     }
+    .method-message {
+    font-size: 0.9em;
+    color: #666;
+    padding: 5px;
+    background: #f8f9fa;
+    border-radius: 4px;
+  }
   
   </style>
 </head>
@@ -271,6 +278,9 @@
           if (saved.weight) document.getElementById(`weight-${index}`).value = saved.weight;
           if (saved.boxes) document.getElementById(`boxes-${index}`).value = saved.boxes;
           if (saved.method) document.getElementById(`method-${index}`).value = saved.method;
+          if (order.shipping_method) {
+            document.getElementById(`method-${index}`).value = order.shipping_method;
+          }
           
           // Restore fulfillment state (if not already set from server)
           if (!order.isFulfilled && saved.isFulfilled) {
@@ -338,31 +348,37 @@
                 </div>
               </div>
             </td>
-            <td>${shipping?.title || 'Standard Shipping'}</td>
+            <td>${shipping?.title || 'No Shipping'}</td>
             <td>
-              <select class="shipping-method-select" id="method-${index}">
+              <select class="shipping-method-select" id="method-${index}"  onchange="saveMeasurements('${order.shopifyId}', ${index})">
                 <option value="service_point">Posti Service Point</option>
                 <option value="home_delivery">Posti Home Delivery</option>
               </select>
             </td>
             <td>
               ${shipping?.title === 'High Price' || shipping?.title === 'Low Price' ? `
-                ${!order.pickupPoint ? `
-                  <button id="findPickup-${index}" onclick="handlePickup(${index})">
-                    Find Pickup
-                  </button>
-                ` : ''}
-                <div id="pickup-${index}">
-                  ${order.pickupPoint ? `
-                    <div style="margin-top: 5px; font-size: 0.9em;">
-                      <strong>${order.pickupPoint.publicName || ''}</strong><br>
-                      ${order.pickupPoint.streetAddress || ''}<br>
-                      ${order.pickupPoint.postcode || ''} ${order.pickupPoint.city || ''}<br>
-                      ${order.pickupPoint.parcelLocker ? 'Parcel Locker' : 'Post Office'}<br>
-                      <b>Distance:</b> ${order.pickupPoint.distance}
-                    </div>
+                ${document.getElementById(`method-${index}`)?.value === 'service_point' ? `
+                  ${!order.pickupPoint ? `
+                    <button id="findPickup-${index}" onclick="handlePickup(${index})">
+                      Find Pickup
+                    </button>
                   ` : ''}
-                </div>
+                  <div id="pickup-${index}">
+                    ${order.pickupPoint ? `
+                      <div style="margin-top: 5px; font-size: 0.9em;">
+                        <strong>${order.pickupPoint.publicName || ''}</strong><br>
+                        ${order.pickupPoint.streetAddress || ''}<br>
+                        ${order.pickupPoint.postcode || ''} ${order.pickupPoint.city || ''}<br>
+                        ${order.pickupPoint.parcelLocker ? 'Parcel Locker' : 'Post Office'}<br>
+                        <b>Distance:</b> ${order.pickupPoint.distance}
+                      </div>
+                    ` : ''}
+                  </div>
+                ` : `
+                  <div style="font-size: 0.9em; color: #666;">
+                    Change to "Service Point" to select pickup location
+                  </div>
+                `}
               ` : 'Home Delivery'}
             </td>
             <td>
@@ -391,6 +407,7 @@
         weight: Number(document.getElementById(`weight-${index}`).value),
         boxes: Number(document.getElementById(`boxes-${index}`).value)
       };
+      const method = document.getElementById(`method-${index}`).value;
 
       try {
         const response = await fetch('/api/update-measurements', {
@@ -398,7 +415,7 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
             orderId: orderId,
-            dimensions 
+            dimensions , method
           })
         });
         
