@@ -217,6 +217,7 @@
         <th>Shipping Method</th>
         <th>Choose Service</th>
         <th>Actions</th>
+        <th>Create Shipment</th>
         <th>Fulfill</th>
       </tr>
     </thead>
@@ -316,7 +317,7 @@
                         class="weight-input" id="weight-${index}"
                         value="${order.dimensions?.weight || ''}"
                         onchange="saveMeasurements('${order.shopifyId}', ${index})">
-                  <span> / </span>
+                  <span> Boxes: </span>
                   <input type="number" min="1" max="99" placeholder="#" 
                         class="box-input" id="boxes-${index}"
                         value="${order.dimensions?.boxes || ''}"
@@ -332,14 +333,27 @@
               </select>
             </td>
             <td>
-              ${shipping?.title === 'High Price' || shipping?.title === 'Low Price' ? `
-                <button onclick="handlePickup(${index})">
-                  Find Pickup
-                </button>
-                <div id="pickup-${index}"></div>
-              ` : 'Home Delivery'}
-            </td>
-
+          ${shipping?.title === 'High Price' || shipping?.title === 'Low Price' ? `
+            <button onclick="handlePickup(${index})">
+              ${order.pickupPoint ? 'Change Pickup' : 'Find Pickup'}
+            </button>
+            <div id="pickup-${index}">
+              ${order.pickupPoint ? `
+                <div style="margin-top: 5px; font-size: 0.9em;">
+                  <strong>${order.pickupPoint.pupCode || 'Selected Point'}</strong><br>
+                  ${order.pickupPoint.publicName || ''}<br>
+                  ${order.pickupPoint.streetAddress || ''}<br>
+                  ${order.pickupPoint.postcode || ''} ${order.pickupPoint.city || ''}<br>
+                  ${order.pickupPoint.parcelLocker ? 'Parcel Locker' : 'Post Office'}
+                </div>
+              ` : ''}
+            </div>
+          ` : 'Home Delivery'}
+        </td>
+            <td>
+            <button onclick="createPostiShipment(${index})" style="margin-bottom: 5px;">
+              Create Posti Order
+            </button>
             <td>
               <button onclick="fulfillOrder('${order.shopifyId}')">
                 Fulfill Order
@@ -446,13 +460,12 @@
     });
 
     const data = await response.json();
-    const points = data.servicePoints || []; // NEW: get all pickup points from response
+    const points = data.servicePoints || [];
 
     if (points.length) {
-      points.sort((a, b) => a.distanceInMeters - b.distanceInMeters); // NEW: sort points by distance
-      const closestPoint = points[0]; // NEW: select the closest point
+      points.sort((a, b) => a.distanceInMeters - b.distanceInMeters);
+      const closestPoint = points[0];
 
-      // NEW: format the distance nicely
       let distanceText = '';
       if (closestPoint.distanceInMeters >= 1000) {
         distanceText = `${(closestPoint.distanceInMeters / 1000).toFixed(1)} km`;
@@ -460,17 +473,38 @@
         distanceText = `${closestPoint.distanceInMeters} m`;
       }
 
+      // Prepare pickup point data for saving
+      const pickupPointData = {
+        pupCode: closestPoint.pupCode,
+        publicName: closestPoint.addresses?.[0]?.publicName || 'No public name available',
+        streetAddress: closestPoint.addresses?.[0]?.streetAddress || '',
+        postcode: closestPoint.addresses?.[0]?.postcode || '',
+        city: closestPoint.addresses?.[0]?.city || '',
+        countryCode: closestPoint.addresses?.[0]?.countryCode || '',
+        parcelLocker: closestPoint.parcelLocker || false,
+        distance: distanceText,
+        quickId: closestPoint.quickId || '' // Add quickId if available
+      };
+
+      // Save to database
+      await fetch('/api/update-pickup-point', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          orderId: order.shopifyId,
+          pickupPoint: pickupPointData
+        })
+      });
+
       container.innerHTML = `
         <div>
-          <strong>${closestPoint.pupCode}</strong><br>
-         
-          ${closestPoint.addresses?.[0]?.publicName || 'No public name available'}<br>
-          ${closestPoint.addresses?.[0]?.streetAddress || ''}<br>
-          ${closestPoint.addresses?.[0]?.postcode || ''} 
-          ${closestPoint.addresses?.[0]?.city || ''}<br>
-          ${closestPoint.addresses?.[0]?.countryCode || ''}<br>
-          ${closestPoint.parcelLocker ? 'Parcel Locker' : 'Post Office'}<br> <!-- NEW: show locker/post office -->
-          Distance from customer: ${distanceText} <!-- NEW: show distance -->
+          <strong>${pickupPointData.pupCode}</strong><br>
+          ${pickupPointData.publicName}<br>
+          ${pickupPointData.streetAddress}<br>
+          ${pickupPointData.postcode} ${pickupPointData.city}<br>
+          ${pickupPointData.countryCode}<br>
+          ${pickupPointData.parcelLocker ? 'Parcel Locker' : 'Post Office'}<br>
+          Distance from customer: ${pickupPointData.distance}
         </div>
       `;
     } else {
@@ -498,7 +532,60 @@
     }
 
 
-
+async function createPostiShipment(index) {
+  try {
+    const order = currentOrders[index];
+    const country = order.shipping_address.country_code;
+    const methodSelect = document.getElementById(`method-${index}`);
+    const selectedMethod = methodSelect.value;
+    
+    // Check if country is Finland
+    if (!country || country.toUpperCase() !== 'FI') {
+      throw new Error('Posti shipments only available for Finland');
+    }
+    
+    // Get dimensions
+    const dimensions = {
+      length: Number(document.getElementById(`length-${index}`).value),
+      width: Number(document.getElementById(`width-${index}`).value),
+      height: Number(document.getElementById(`height-${index}`).value),
+      weight: Number(document.getElementById(`weight-${index}`).value),
+      boxes: Number(document.getElementById(`boxes-${index}`).value)
+    };
+    
+    // Validate dimensions
+    if (!dimensions.weight || !dimensions.boxes) {
+      throw new Error('Please enter weight and box count');
+    }
+    
+    // Determine which endpoint to call based on selected method
+    const endpoint = selectedMethod === 'service_point' 
+      ? '/api/create-posti-service-point' 
+      : '/api/create-posti-home-delivery';
+    
+    // Create Posti shipment
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        orderId: order.shopifyId,
+        dimensions,
+        orderData: order
+      })
+    });
+    
+    const data = await response.json();
+    if (data.success) {
+      alert('Posti order created successfully!');
+      console.log('Posti response:', data.data);
+    } else {
+      throw new Error(data.error || 'Failed to create Posti order');
+    }
+  } catch (err) {
+    console.error('Error creating Posti order:', err);
+    alert('Error creating Posti order: ' + err.message);
+  }
+}
 
 
 

@@ -16,9 +16,9 @@ mongoose.connect(process.env.MONGODB_URI, {
 
 // 1️⃣ Create a new Schema object
 const OrderSchema = new mongoose.Schema({
-  // store Shopify’s numeric order ID as `shopifyId` (string so Mongoose can index it easily)
+
   shopifyId:     { type: String, unique: true, required: true },
-  orderNumber:   { type: Number, required: true },
+  orderNumber:   { type: String, required: true },
 
   // your existing line_items array (we’ll let it be “any” shape for now)
   line_items:    { type: Array, default: [] },
@@ -38,6 +38,16 @@ const OrderSchema = new mongoose.Schema({
     height: { type: Number, default: null },  // H in cm
     weight: { type: Number, default: null },  // weight in kg
     boxes:  { type: Number, default: null }   // box count, whole number
+  },
+  pickupPoint: { 
+    pupCode: String,
+    publicName: String,
+    streetAddress: String,
+    postcode: String,
+    city: String,
+    countryCode: String,
+    parcelLocker: Boolean,
+    distance: String,
   }
 }, {
   timestamps: true
@@ -229,6 +239,27 @@ app.post('/api/get-product', async (req, res) => {
   }
 });
 
+
+app.post('/api/update-pickup-point', async (req, res) => {
+  const { orderId, pickupPoint } = req.body;
+  try {
+    const updated = await Order.findOneAndUpdate(
+      { shopifyId: orderId.toString() },
+      { $set: { pickupPoint } },
+      { new: true }
+    );
+    if (!updated) {
+      return res.status(404).json({ success: false, error: 'Order not found' });
+    }
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Save pickup point error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+
+
 // Posti API Endpoint (unchanged)
 app.post('/api/find-pickup-point', async (req, res) => {
   try {
@@ -256,7 +287,182 @@ app.post('/api/find-pickup-point', async (req, res) => {
   }
 });
 
-// Fulfillment Endpoint (unchanged)
+
+// Posti create orders endpoint
+app.post('/api/create-posti-service-point', async (req, res) => {
+  try {
+    const { orderId, dimensions, orderData } = req.body;
+    
+    const shipmentData = {
+      pdfConfig: {
+        target1XOffset: 0,
+        target1YOffset: 0,
+        target1Media: "thermo-225",
+        target2XOffset: 0,
+        target2YOffset: 0,
+        target2Media: "laser-a4",
+        target3XOffset: 0,
+        target3YOffset: 0,
+        target3Media: null,
+        target4XOffset: 0,
+        target4YOffset: 0,
+        target4Media: null
+      },
+      shipment: {
+        sender: {
+          name: "Posti Oy",
+          address1: "Postintaival 7",
+          zipcode: "00230",
+          city: "HELSINKI",
+          country: "FI",
+          phone: "+35820077000",
+          email: "consumerservice@posti.com"
+        },
+        senderPartners: [
+          {
+            id: "POSTI",
+            custNo: "654321"
+          }
+        ],
+        receiver: {
+          name: orderData.shipping_address.name,
+          address1: orderData.shipping_address.address1,
+          address2: orderData.shipping_address.address2 || '',
+          zipcode: orderData.shipping_address.zip,
+          city: orderData.shipping_address.city,
+          country: orderData.shipping_address.country_code,
+          phone: orderData.shipping_address.phone || '',
+          email: ""
+        },
+        agent: {
+          quickId: "207003200", // Example ID, replace with actual or get from pickup point selection
+          name: "Posti Service Point",
+          address1: "Example Street 1",
+          zipcode: "00100",
+          city: "HELSINKI",
+          country: "FI"
+        },
+        service: {
+          id: "PO2103" // Hardcoded service point ID
+        },
+        parcels: [
+          {
+            copies: dimensions.boxes.toString(),
+            weight: dimensions.weight.toString(),
+            contents: "Products",
+            valuePerParcel: true
+          }
+        ]
+      }
+    };
+
+    const response = await fetch('https://gateway.posti.fi/shippingapi/api/v1/shipping/order', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.POSTI_API_TOKEN}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(shipmentData)
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.message || 'Failed to create Posti service point shipment');
+    }
+
+    const data = await response.json();
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error('Posti service point error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.post('/api/create-posti-home-delivery', async (req, res) => {
+  try {
+    const { orderId, dimensions, orderData } = req.body;
+    
+    const shipmentData = {
+      pdfConfig: {
+        target1XOffset: 0,
+        target1YOffset: 0,
+        target1Media: "thermo-225",
+        target2XOffset: 0,
+        target2YOffset: 0,
+        target2Media: "laser-a4",
+        target3XOffset: 0,
+        target3YOffset: 0,
+        target3Media: null,
+        target4XOffset: 0,
+        target4YOffset: 0,
+        target4Media: null
+      },
+      shipment: {
+        sender: {
+          name: "Posti Oy",
+          address1: "Postintaival 7",
+          zipcode: "00230",
+          city: "HELSINKI",
+          country: "FI",
+          phone: "+35820077000",
+          email: "consumerservice@posti.com"
+        },
+        senderPartners: [
+          {
+            id: "POSTI",
+            custNo: "654321"
+          }
+        ],
+        receiver: {
+          name: orderData.shipping_address.name,
+          address1: orderData.shipping_address.address1,
+          address2: orderData.shipping_address.address2 || '',
+          zipcode: orderData.shipping_address.zip,
+          city: orderData.shipping_address.city,
+          country: orderData.shipping_address.country_code,
+          phone: orderData.shipping_address.phone || '',
+          email: ""
+        },
+        service: {
+          id: "PO2104" // Hardcoded home delivery ID
+        },
+        parcels: [
+          {
+            copies: dimensions.boxes.toString(),
+            weight: dimensions.weight.toString(),
+            contents: "Products",
+            valuePerParcel: true
+          }
+        ]
+      }
+    };
+
+    const response = await fetch('https://gateway.posti.fi/shippingapi/api/v1/shipping/order', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.POSTI_API_TOKEN}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(shipmentData)
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.message || 'Failed to create Posti home delivery shipment');
+    }
+
+    const data = await response.json();
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error('Posti home delivery error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+
+
+
+// Fulfillment Endpoint 
 app.post('/api/fulfill-order', async (req, res) => {
   const { orderId } = req.body;
   try {
