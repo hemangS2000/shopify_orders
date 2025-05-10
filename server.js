@@ -48,7 +48,8 @@ const OrderSchema = new mongoose.Schema({
     countryCode: String,
     parcelLocker: Boolean,
     distance: String,
-  }
+  },
+  isFulfilled: { type: Boolean, default: false }
 }, {
   timestamps: true
 });
@@ -522,13 +523,19 @@ app.post('/api/fulfill-order', async (req, res) => {
     const postData = await postResp.json();
     const status = postData?.data?.fulfillmentCreate?.fulfillment?.status;
     if (status === 'SUCCESS') {
+      await Order.findOneAndUpdate(
+        { shopifyId: orderId.toString() },
+        { $set: { isFulfilled: true, fulfilledAt: new Date() } }
+      );
       return res.json({ success: true });
     } else {
       return res
         .status(400)
         .json({ success: false, error: postData.data.fulfillmentCreate.userErrors });
     }
-  } catch (err) {
+  }
+  
+  catch (err) {
     console.error('Fulfillment error:', err);
     res.status(500).json({ success: false, error: err.message });
   }

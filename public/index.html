@@ -235,42 +235,55 @@
     let currentOrders = [];
 
     async function refreshOrders() {
-          try {
-            // Save current input values before refresh
-            const inputsToSave = {};
-            currentOrders.forEach((order, index) => {
-              if (!order.shopifyId) return;
-              
-              inputsToSave[order.shopifyId] = {
-                length: document.getElementById(`length-${index}`)?.value,
-                width: document.getElementById(`width-${index}`)?.value,
-                height: document.getElementById(`height-${index}`)?.value,
-                weight: document.getElementById(`weight-${index}`)?.value,
-                boxes: document.getElementById(`boxes-${index}`)?.value,
-                method: document.getElementById(`method-${index}`)?.value
-              };
-            });
+      try {
+        // Save current input values AND fulfillment states before refresh
+        const statesToSave = {};
+        currentOrders.forEach((order, index) => {
+          if (!order.shopifyId) return;
+          
+          statesToSave[order.shopifyId] = {
+            // Input values
+            length: document.getElementById(`length-${index}`)?.value,
+            width: document.getElementById(`width-${index}`)?.value,
+            height: document.getElementById(`height-${index}`)?.value,
+            weight: document.getElementById(`weight-${index}`)?.value,
+            boxes: document.getElementById(`boxes-${index}`)?.value,
+            method: document.getElementById(`method-${index}`)?.value,
+            // Fulfillment state
+            isFulfilled: order.isFulfilled
+          };
+        });
 
-            const response = await fetch('/api/orders');
-            currentOrders = await response.json();
-            renderOrders();
-
-            // Restore input values after refresh
-            currentOrders.forEach((order, index) => {
-              if (!order.shopifyId || !inputsToSave[order.shopifyId]) return;
-              
-              const saved = inputsToSave[order.shopifyId];
-              if (saved.length) document.getElementById(`length-${index}`).value = saved.length;
-              if (saved.width) document.getElementById(`width-${index}`).value = saved.width;
-              if (saved.height) document.getElementById(`height-${index}`).value = saved.height;
-              if (saved.weight) document.getElementById(`weight-${index}`).value = saved.weight;
-              if (saved.boxes) document.getElementById(`boxes-${index}`).value = saved.boxes;
-              if (saved.method) document.getElementById(`method-${index}`).value = saved.method;
-            });
-          } catch (error) {
-            showError('Failed to refresh orders: ' + error.message);
+        // Fetch fresh orders
+        const response = await fetch('/api/orders');
+        currentOrders = await response.json();
+        
+        // Restore saved states
+        currentOrders.forEach((order, index) => {
+          if (!order.shopifyId || !statesToSave[order.shopifyId]) return;
+          
+          const saved = statesToSave[order.shopifyId];
+          
+          // Restore input values
+          if (saved.length) document.getElementById(`length-${index}`).value = saved.length;
+          if (saved.width) document.getElementById(`width-${index}`).value = saved.width;
+          if (saved.height) document.getElementById(`height-${index}`).value = saved.height;
+          if (saved.weight) document.getElementById(`weight-${index}`).value = saved.weight;
+          if (saved.boxes) document.getElementById(`boxes-${index}`).value = saved.boxes;
+          if (saved.method) document.getElementById(`method-${index}`).value = saved.method;
+          
+          // Restore fulfillment state (if not already set from server)
+          if (!order.isFulfilled && saved.isFulfilled) {
+            order.isFulfilled = saved.isFulfilled;
           }
-        }
+        });
+
+        renderOrders();
+        
+      } catch (error) {
+        showError('Failed to refresh orders: ' + error.message);
+      }
+    }
 
     function renderOrders() {
       const tbody = document.getElementById('orders-table-body');
@@ -357,9 +370,12 @@
               Create Posti Order
             </button>
             <td>
-              <button onclick="fulfillOrder('${order.shopifyId}')">
-                Fulfill Order
-              </button>
+              ${order.isFulfilled ? 
+                '<span style="color: var(--success-color); font-weight: bold;">Fulfilled</span>' : 
+                `<button onclick="fulfillOrder('${order.shopifyId}', ${index})">
+                  Fulfill Order
+                </button>`
+              }
             </td>
           </tr>
         `;
@@ -590,20 +606,21 @@ async function createPostiShipment(index) {
 
 
 
-  async function fulfillOrder(orderId) {
+  async function fulfillOrder(orderId, index) {
   if (!confirm('Are you sure you want to fulfill this order?')) return;
 
   try {
     const response = await fetch('/api/fulfill-order', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        orderId: orderId
-      })
+      body: JSON.stringify({ orderId })
     });
 
     const data = await response.json();
     if (data.success) {
+      // Update local state and UI
+      currentOrders[index].isFulfilled = true;
+      renderOrders();
       alert('Order fulfilled successfully!');
     } else {
       console.error(data.error);
