@@ -150,6 +150,15 @@ app.post('/api/webhook/orders', verifyWebhook, async (req, res) => {
       };
     });
 
+    // decide default shipping_method based on Shopify shipping_lines title
+    const shippingTitle = webhookOrder.shipping_lines[0]?.title || '';
+    let defaultMethod = 'home_delivery';
+
+    // if your “High Price” or “Low Price” shipping line means pickup…
+    if (shippingTitle === 'High Price' || shippingTitle === 'Low Price') {
+      defaultMethod = 'service_point';
+    }
+
     const transformedOrder = {
       shopifyId: webhookOrder.id.toString(),
       orderNumber: webhookOrder.order_number,
@@ -164,6 +173,7 @@ app.post('/api/webhook/orders', verifyWebhook, async (req, res) => {
         country_code: webhookOrder.shipping_address?.country_code,
         phone: webhookOrder.shipping_address?.phone
       },
+      shipping_method: defaultMethod,
       shipping_lines: webhookOrder.shipping_lines.map(shipping => ({
         title: shipping.title,
         code: shipping.code
