@@ -270,7 +270,7 @@ app.post('/api/find-pickup-point', async (req, res) => {
     postiUrl.searchParams.append("postcode", postcode);
     postiUrl.searchParams.append("locality", locality || '');
     postiUrl.searchParams.append("countryCode", countryCode || 'FI');
-    postiUrl.searchParams.append("limit", "10");
+    postiUrl.searchParams.append("limit", "15");
 
     const response = await fetch(postiUrl.toString(), {
       headers: {

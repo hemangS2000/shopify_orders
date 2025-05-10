@@ -285,7 +285,7 @@
             <td>
               ${address.name || ''}<br>
               ${address.address1 || ''}<br>
-              ${address.address2 || ''}<br>
+              ${address.address2 ? `${address.address2}<br>` : ''}
               ${address.zip || ''}, ${address.city || ''}<br>
               ${address.country_code || ''}
             </td>
@@ -333,23 +333,26 @@
               </select>
             </td>
             <td>
-          ${shipping?.title === 'High Price' || shipping?.title === 'Low Price' ? `
-            <button onclick="handlePickup(${index})">
-              ${order.pickupPoint ? 'Change Pickup' : 'Find Pickup'}
-            </button>
-            <div id="pickup-${index}">
-              ${order.pickupPoint ? `
-                <div style="margin-top: 5px; font-size: 0.9em;">
-                  <strong>${order.pickupPoint.pupCode || 'Selected Point'}</strong><br>
-                  ${order.pickupPoint.publicName || ''}<br>
-                  ${order.pickupPoint.streetAddress || ''}<br>
-                  ${order.pickupPoint.postcode || ''} ${order.pickupPoint.city || ''}<br>
-                  ${order.pickupPoint.parcelLocker ? 'Parcel Locker' : 'Post Office'}
+              ${shipping?.title === 'High Price' || shipping?.title === 'Low Price' ? `
+                ${!order.pickupPoint ? `
+                  <button onclick="handlePickup(${index})">
+                    Find Pickup
+                  </button>
+                ` : ''}
+                <div id="pickup-${index}">
+                  ${order.pickupPoint ? `
+                    <div style="margin-top: 5px; font-size: 0.9em;">
+                      <strong>${order.pickupPoint.pupCode || 'Selected Point'}</strong><br>
+                      ${order.pickupPoint.publicName || ''}<br>
+                      ${order.pickupPoint.streetAddress || ''}<br>
+                      ${order.pickupPoint.postcode || ''} ${order.pickupPoint.city || ''}<br>
+                      ${order.pickupPoint.parcelLocker ? 'Parcel Locker' : 'Post Office'}<br>
+                      Distance: ${order.pickupPoint.distance}
+                    </div>
+                  ` : ''}
                 </div>
-              ` : ''}
-            </div>
-          ` : 'Home Delivery'}
-        </td>
+              ` : 'Home Delivery'}
+            </td>
             <td>
             <button onclick="createPostiShipment(${index})" style="margin-bottom: 5px;">
               Create Posti Order
@@ -483,7 +486,6 @@
         countryCode: closestPoint.addresses?.[0]?.countryCode || '',
         parcelLocker: closestPoint.parcelLocker || false,
         distance: distanceText,
-        quickId: closestPoint.quickId || '' // Add quickId if available
       };
 
       // Save to database
