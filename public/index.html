@@ -296,107 +296,128 @@
     }
 
     function renderOrders() {
-      const tbody = document.getElementById('orders-table-body');
-      tbody.innerHTML = currentOrders.map((order, index) => {
-        const mainItem = order.line_items[0];
-        const shipping = order.shipping_lines[0];
-        const address = order.shipping_address;
+  const tbody = document.getElementById('orders-table-body');
+  tbody.innerHTML = currentOrders.map((order, index) => {
+    const mainItem = order.line_items[0];
+    const shipping = order.shipping_lines[0];
+    const address = order.shipping_address;
 
-        return `
-          <tr>
-            <td>#${order.orderNumber}</td>
-            <td>
-              ${address.name || ''}<br>
-              ${address.address1 || ''}<br>
-              ${address.address2 ? `${address.address2}<br>` : ''}
-              ${address.zip || ''}, ${address.city || ''}<br>
-              ${address.country_code || ''}
-            </td>
-            <td class="clickable" onclick="showProductImages(${index})">
-              ${order.line_items.map(item => `
-                ${item.quantity}x ${item.product_data?.metafield?.value || item.title}<br>
-              `).join('')}
-            </td>
-            <td>
-              <div class="measurements-column">
-                <!-- First line: L×W×H -->
-                <div class="dimensions-input">
-                  <input type="number" min="1" max="999" placeholder="L" 
-                        id="length-${index}" value="${order.dimensions?.length || ''}"
-                        onchange="saveMeasurements('${order.shopifyId}', ${index})">
-                  <span>x</span>
-                  <input type="number" min="1" max="999" placeholder="W" 
-                        id="width-${index}" value="${order.dimensions?.width || ''}"
-                        onchange="saveMeasurements('${order.shopifyId}', ${index})">
-                  <span>x</span>
-                  <input type="number" min="1" max="999" placeholder="H" 
-                        id="height-${index}" value="${order.dimensions?.height || ''}"
-                        onchange="saveMeasurements('${order.shopifyId}', ${index})">
-                </div>
+    // Build the method <select> with the DB value pre-selected
+    const methodSelect = `
+      <select
+        class="shipping-method-select"
+        id="method-${index}"
+        onchange="onMethodChange('${order.shopifyId}', ${index}, this.value)"
+        >
+        <option value="service_point"
+          ${order.shipping_method === 'service_point' ? 'selected' : ''}
+        >Posti Service Point</option>
+        <option value="home_delivery"
+          ${order.shipping_method === 'home_delivery' ? 'selected' : ''}
+        >Posti Home Delivery</option>
+      </select>
+    `;
 
-                <!-- Second line: weight and box count -->
-                <div class="dimensions-input" style="margin-top:0.5rem;">
-                  Weight: <input type="number" min="0.1" max="99" step="0.1" placeholder="kg" 
-                        class="weight-input" id="weight-${index}"
-                        value="${order.dimensions?.weight || ''}"
-                        onchange="saveMeasurements('${order.shopifyId}', ${index})">
-                  <span> Boxes: </span>
-                  <input type="number" min="1" max="99" placeholder="#" 
-                        class="box-input" id="boxes-${index}"
-                        value="${order.dimensions?.boxes || ''}"
-                        onchange="saveMeasurements('${order.shopifyId}', ${index})">
-                </div>
-              </div>
-            </td>
-            <td>${shipping?.title || 'No Shipping'}</td>
-            <td>
-              <select class="shipping-method-select" id="method-${index}"  onchange="saveMeasurements('${order.shopifyId}', ${index})">
-                <option value="service_point">Posti Service Point</option>
-                <option value="home_delivery">Posti Home Delivery</option>
-              </select>
-            </td>
-            <td>
-              ${shipping?.title === 'High Price' || shipping?.title === 'Low Price' ? `
-                ${document.getElementById(`method-${index}`)?.value === 'service_point' ? `
-                  ${!order.pickupPoint ? `
-                    <button id="findPickup-${index}" onclick="handlePickup(${index})">
-                      Find Pickup
-                    </button>
-                  ` : ''}
-                  <div id="pickup-${index}">
-                    ${order.pickupPoint ? `
-                      <div style="margin-top: 5px; font-size: 0.9em;">
-                        <strong>${order.pickupPoint.publicName || ''}</strong><br>
-                        ${order.pickupPoint.streetAddress || ''}<br>
-                        ${order.pickupPoint.postcode || ''} ${order.pickupPoint.city || ''}<br>
-                        ${order.pickupPoint.parcelLocker ? 'Parcel Locker' : 'Post Office'}<br>
-                        <b>Distance:</b> ${order.pickupPoint.distance}
-                      </div>
-                    ` : ''}
-                  </div>
-                ` : `
-                  <div style="font-size: 0.9em; color: #666;">
-                    Change to "Service Point" to select pickup location
-                  </div>
-                `}
-              ` : 'Home Delivery'}
-            </td>
-            <td>
-            <button onclick="createPostiShipment(${index})" style="margin-bottom: 5px;">
-              Create Posti Order
-            </button>
-            <td>
-              ${order.isFulfilled ? 
-                '<span style="color: var(--success-color); font-weight: bold;">Fulfilled</span>' : 
-                `<button onclick="fulfillOrder('${order.shopifyId}', ${index})">
-                  Fulfill Order
-                </button>`
-              }
-            </td>
-          </tr>
-        `;
-      }).join('');
-    }
+    return `
+      <tr>
+        <td>#${order.orderNumber}</td>
+        <td>
+          ${address.name || ''}<br>
+          ${address.address1 || ''}<br>
+          ${address.address2 ? `${address.address2}<br>` : ''}
+          ${address.zip || ''}, ${address.city || ''}<br>
+          ${address.country_code || ''}
+        </td>
+        <td class="clickable" onclick="showProductImages(${index})">
+          ${order.line_items.map(item => `
+            ${item.quantity}x ${item.product_data?.metafield?.value || item.title}<br>
+          `).join('')}
+        </td>
+        <td>
+          <!-- dimensions inputs stay the same as before -->
+          <div class="dimensions-input">
+            <input type="number" min="1" max="999" placeholder="L" 
+                  id="length-${index}" value="${order.dimensions?.length || ''}"
+                  onchange="saveMeasurements('${order.shopifyId}', ${index})">
+            <span>x</span>
+            <input type="number" min="1" max="999" placeholder="W" 
+                  id="width-${index}" value="${order.dimensions?.width || ''}"
+                  onchange="saveMeasurements('${order.shopifyId}', ${index})">
+            <span>x</span>
+            <input type="number" min="1" max="999" placeholder="H" 
+                  id="height-${index}" value="${order.dimensions?.height || ''}"
+                  onchange="saveMeasurements('${order.shopifyId}', ${index})">
+          </div>
+          <div class="dimensions-input" style="margin-top:0.5rem;">
+            Weight: <input type="number" min="0.1" max="99" step="0.1" placeholder="kg" 
+                  class="weight-input" id="weight-${index}"
+                  value="${order.dimensions?.weight || ''}"
+                  onchange="saveMeasurements('${order.shopifyId}', ${index})">
+            <span> Boxes: </span>
+            <input type="number" min="1" max="99" placeholder="#" 
+                  class="box-input" id="boxes-${index}"
+                  value="${order.dimensions?.boxes || ''}"
+                  onchange="saveMeasurements('${order.shopifyId}', ${index})">
+          </div>
+        </td>
+        <td>${shipping?.title || 'No Shipping'}</td>
+        <td>${methodSelect}</td>
+        <td id="action-${index}">${buildActionCell(order, index)}</td>
+        <td>
+          <button onclick="createPostiShipment(${index})" style="margin-bottom: 5px;">
+            Create Posti Order
+          </button>
+        </td>
+        <td>
+          ${order.isFulfilled
+            ? '<span style="color: var(--success-color); font-weight: bold;">Fulfilled</span>'
+            : `<button onclick="fulfillOrder('${order.shopifyId}', ${index})">
+                 Fulfill Order
+               </button>`
+          }
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+    function buildActionCell(order, index) {
+  if (order.shipping_method === 'service_point') {
+    return `
+      <div id="pickup-${index}">
+        ${order.pickupPoint
+          ? `<div style="margin-top:5px; font-size:0.9em;">
+               <strong>${order.pickupPoint.publicName}</strong><br>
+               ${order.pickupPoint.streetAddress}<br>
+               ${order.pickupPoint.postcode} ${order.pickupPoint.city}<br>
+               ${order.pickupPoint.parcelLocker ? 'Parcel Locker' : 'Post Office'}<br>
+               <b>Distance:</b> ${order.pickupPoint.distance}
+             </div>`
+          : `<button id="findPickup-${index}" onclick="handlePickup(${index})">
+               Find Pickup
+             </button>`
+        }
+      </div>
+    `;
+  }
+
+  // home_delivery
+  return `<div class="method-message">Home delivery selected</div>`;
+}
+
+
+
+async function onMethodChange(orderId, index, newMethod) {
+  // 1) Update local state so buildActionCell() sees the new value
+  currentOrders[index].shipping_method = newMethod;
+
+  // 2) Immediately re-render *just* the Actions cell
+  document.getElementById(`action-${index}`)
+          .innerHTML = buildActionCell(currentOrders[index], index);
+
+  // 3) Persist to your server/DB
+  await saveMeasurements(orderId, index);
+}
 
 
     async function saveMeasurements(orderId, index) {
