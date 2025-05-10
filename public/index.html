@@ -333,7 +333,7 @@
               </select>
             </td>
             <td>
-              ${document.getElementById(`method-${index}`)?.value === 'service_point' ? `
+              ${shipping?.title === 'High Price' || shipping?.title === 'Low Price' ? `
                 ${!order.pickupPoint ? `
                   <button id="findPickup-${index}" onclick="handlePickup(${index})">
                     Find Pickup
@@ -444,11 +444,6 @@
     }
 
   async function handlePickup(index) {
-
-    if (document.getElementById(`method-${index}`).value !== 'service_point') {
-    return;
-  }
-
   document.getElementById(`findPickup-${index}`).style.display = 'none';
   const order = currentOrders[index];
   const container = document.getElementById(`pickup-${index}`);
@@ -619,13 +614,6 @@ async function createPostiShipment(index) {
     alert('Error fulfilling order: ' + err.message);
   }
 }
-
-document.addEventListener('change', function(e) {
-  if (e.target.classList.contains('shipping-method-select')) {
-    const index = e.target.id.split('-')[1];
-    renderOrders(); // Re-render the row when selection changes
-  }
-});
 
     // Initialization
     document.getElementById('modal-overlay').addEventListener('click', closeModal);
